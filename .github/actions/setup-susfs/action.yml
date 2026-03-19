@@ -105,6 +105,24 @@ runs:
           patch -p1 < "$KSU_PATCH" || true
         fi
 
+    - name: Apply KernelSU-Next SUSFS Fix Patches
+      shell: bash
+      run: |
+        SUSFS_VERSION=${{ env.SUSFS_VERSION }}
+        KSU_FIX_DIR="${{ github.workspace }}/kernel_patches/next/susfs_fix_patches/v${SUSFS_VERSION}"
+
+        if [ -d "$KSU_FIX_DIR" ]; then
+          cd "${{ github.workspace }}/kernel/KernelSU-Next"
+          echo "Applying KernelSU-Next SUSFS fix patches from $KSU_FIX_DIR..."
+          for patch_file in "$KSU_FIX_DIR"/fix_*.patch; do
+            [ -f "$patch_file" ] || continue
+            echo "Applying $(basename "$patch_file")..."
+            patch -p1 < "$patch_file" || true
+          done
+        else
+          echo "No KernelSU-Next SUSFS fix patches found at $KSU_FIX_DIR"
+        fi
+
     - name: Apply SUSFS Fix Patches (Android 14 - 6.1)
       if: ${{ inputs.android_version == 'android14' && inputs.kernel_version == '6.1' }}
       shell: bash
