@@ -1,5 +1,5 @@
 name: Setup SUSFS
-description: 'Clone and apply SUSFS kernel patches (KSU-side already handled by Wild_KSU)'
+description: 'Clone and apply SUSFS patches to kernel with version-specific fixes'
 
 inputs:
   android_version:
@@ -79,7 +79,7 @@ runs:
         CONFIG_KSU_SUSFS_SUS_MAP=y
         EOF
 
-    - name: Apply Base SUSFS Kernel Patches
+    - name: Apply Base SUSFS Patches
       shell: bash
       working-directory: ${{ github.workspace }}/kernel/common
       run: |
@@ -87,7 +87,7 @@ runs:
         cp "${{ github.workspace }}/susfs4ksu/kernel_patches/fs/"* fs/
         cp "${{ github.workspace }}/susfs4ksu/kernel_patches/include/linux/"* include/linux/
 
-        # Apply the kernel integration patch (kernel-side only, KSU-side handled by Wild_KSU)
+        # Apply the kernel integration patch
         PATCH_FILE="${{ github.workspace }}/susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch"
         if [ -f "$PATCH_FILE" ]; then
           cp "$PATCH_FILE" ./
@@ -96,6 +96,31 @@ runs:
           echo "WARNING: SUSFS patch not found: $PATCH_FILE"
           echo "Available patches:"
           ls -la "${{ github.workspace }}/susfs4ksu/kernel_patches/"
+        fi
+
+        # Apply KernelSU-Next SUSFS enablement patch
+        KSU_PATCH="${{ github.workspace }}/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"
+        if [ -f "$KSU_PATCH" ]; then
+          cd "${{ github.workspace }}/kernel/KernelSU-Next"
+          patch -p1 < "$KSU_PATCH" || true
+        fi
+
+    - name: Apply KernelSU-Next SUSFS Fix Patches
+      shell: bash
+      run: |
+        SUSFS_VERSION=${{ env.SUSFS_VERSION }}
+        KSU_FIX_DIR="${{ github.workspace }}/kernel_patches/next/susfs_fix_patches/v${SUSFS_VERSION}"
+
+        if [ -d "$KSU_FIX_DIR" ]; then
+          cd "${{ github.workspace }}/kernel/KernelSU-Next"
+          echo "Applying KernelSU-Next SUSFS fix patches from $KSU_FIX_DIR..."
+          for patch_file in "$KSU_FIX_DIR"/fix_*.patch; do
+            [ -f "$patch_file" ] || continue
+            echo "Applying $(basename "$patch_file")..."
+            patch -p1 < "$patch_file" || true
+          done
+        else
+          echo "No KernelSU-Next SUSFS fix patches found at $KSU_FIX_DIR"
         fi
 
     - name: Apply SUSFS Fix Patches (Android 14 - 6.1)
@@ -107,12 +132,14 @@ runs:
         SUSFS_VERSION=${{ env.SUSFS_VERSION }}
         PATCH_DIR="${{ github.workspace }}/kernel_patches/wild/susfs_fix_patches/v${SUSFS_VERSION}/a14-6.1"
 
+        # base.c.patch - adds missing #include <linux/susfs_def.h> to fs/proc/base.c
         if [ -f "$PATCH_DIR/base.c.patch" ]; then
           echo "Applying base.c.patch fix for a14-6.1..."
           cp "$PATCH_DIR/base.c.patch" ./
           patch -p1 < base.c.patch || true
         fi
 
+        # Fix task_mmu for older sublevels
         if [[ "$SUBLEVEL" -le 75 && "${{ inputs.os_patch_level }}" != "2024-05" ]]; then
           echo "Applying task_mmu fix for sublevel <= 75..."
           sed -i -e 's/goto show_pad;/return 0;/' ./fs/proc/task_mmu.c
@@ -127,12 +154,14 @@ runs:
         SUSFS_VERSION=${{ env.SUSFS_VERSION }}
         PATCH_DIR="${{ github.workspace }}/kernel_patches/wild/susfs_fix_patches/v${SUSFS_VERSION}/a15-6.6"
 
+        # base.c.patch - adds missing #include <linux/susfs_def.h> to fs/proc/base.c
         if [[ "$SUBLEVEL" -le 92 ]] && [ -f "$PATCH_DIR/base.c.patch" ]; then
           echo "Applying base.c.patch fix for a15-6.6 (sublevel <= 92)..."
           cp "$PATCH_DIR/base.c.patch" ./
           patch -p1 < base.c.patch || true
         fi
 
+        # task_mmu.c.patch
         if [[ "$SUBLEVEL" -le 58 ]] && [ -f "$PATCH_DIR/task_mmu.c.patch" ]; then
           echo "Applying task_mmu.c.patch fix for a15-6.6 (sublevel <= 58)..."
           cp "$PATCH_DIR/task_mmu.c.patch" ./
@@ -147,6 +176,7 @@ runs:
         SUSFS_VERSION=${{ env.SUSFS_VERSION }}
         PATCH_DIR="${{ github.workspace }}/kernel_patches/wild/susfs_fix_patches/v${SUSFS_VERSION}/a16-6.12"
 
+        # Apply any available fix patches for a16-6.12
         if [ -d "$PATCH_DIR" ]; then
           for patch_file in "$PATCH_DIR"/*.patch; do
             [ -f "$patch_file" ] || continue
@@ -154,4 +184,13 @@ runs:
             cp "$patch_file" ./
             patch -p1 < "$(basename "$patch_file")" || true
           done
+        else
+          echo "No fix patches available for a16-6.12 yet - attempting build without fixes"
+          # For a16-6.12, manually add the include if missing (common fix)
+          if grep -q 'AS_FLAGS_SUS_MAP' fs/proc/base.c 2>/dev/null; then
+            if ! grep -q 'susfs_def.h' fs/proc/base.c 2>/dev/null; then
+              echo "Adding missing susfs_def.h include to fs/proc/base.c..."
+              sed -i '/#include "internal.h"/a #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n#include <linux\/susfs_def.h>\n#endif' fs/proc/base.c
+            fi
+          fi
         fi
