@@ -15,15 +15,6 @@ on:
         description: 'KernelSU-Next commit'
         required: false
         type: string
-      susfs_commit:
-        description: 'SUSFS commit map'
-        required: false
-        type: string
-      enable_susfs:
-        description: 'Enable SUSFS'
-        required: false
-        type: boolean
-        default: true
       build_modules:
         description: 'Build virtual device modules'
         required: false
@@ -61,7 +52,5 @@ jobs:
       kernel_version: ${{ matrix.kernel_version }}
       arch: ${{ inputs.arch }}
       ksu_commit: ${{ inputs.ksu_commit }}
-      susfs_commit: ${{ inputs.susfs_commit }}
-      enable_susfs: ${{ inputs.enable_susfs }}
       build_modules: ${{ inputs.build_modules }}
     secrets: inherit

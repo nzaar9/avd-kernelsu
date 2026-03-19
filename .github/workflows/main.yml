@@ -1,4 +1,4 @@
-name: Build AVD Kernels with KernelSU-Next + SUSFS
+name: Build AVD Kernels with KernelSU-Next
 
 permissions:
   contents: write
@@ -24,10 +24,6 @@ on:
           - aarch64
           - both
         default: both
-      enable_susfs:
-        description: 'Enable SUSFS patches'
-        type: boolean
-        default: true
       build_modules:
         description: 'Build virtual device modules (for AVD)'
         type: boolean
@@ -57,7 +53,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       ksu_commit: ${{ steps.commits.outputs.ksu_commit }}
-      susfs_commit: ${{ steps.commits.outputs.susfs_commit }}
     steps:
       - name: Fetch Latest Commits
         id: commits
@@ -80,24 +75,6 @@ jobs:
           echo "KernelSU-Next: $ksu_commit"
           echo "ksu_commit=$ksu_commit" >> $GITHUB_OUTPUT
 
-          # SUSFS - fetch all relevant branches
-          SUSFS_REPO="https://gitlab.com/simonpunk/susfs4ksu.git"
-          BRANCHES=(
-            "gki-android14-6.1"
-            "gki-android15-6.6"
-            "gki-android16-6.12"
-          )
-
-          SUSFS_MAP=""
-          for branch in "${BRANCHES[@]}"; do
-            COMMIT=$(get_commit "$SUSFS_REPO" "refs/heads/$branch")
-            if [ -n "$COMMIT" ]; then
-              echo "  $branch: $COMMIT"
-              [ -z "$SUSFS_MAP" ] && SUSFS_MAP="$branch:$COMMIT" || SUSFS_MAP="$SUSFS_MAP,$branch:$COMMIT"
-            fi
-          done
-          echo "susfs_commit=$SUSFS_MAP" >> $GITHUB_OUTPUT
-
   # ──────────────────────────────────────────────
   # Android 14 - Kernel 6.1 (x86_64)
   # ──────────────────────────────────────────────
@@ -109,8 +86,6 @@ jobs:
       config_file: .github/kernel-config/a14-6.1.json
       arch: x86_64
       ksu_commit: ${{ needs.fetch-commits.outputs.ksu_commit }}
-      susfs_commit: ${{ needs.fetch-commits.outputs.susfs_commit }}
-      enable_susfs: ${{ inputs.enable_susfs || true }}
       build_modules: ${{ inputs.build_modules || true }}
     secrets: inherit
 
@@ -123,8 +98,6 @@ jobs:
       config_file: .github/kernel-config/a14-6.1.json
       arch: aarch64
       ksu_commit: ${{ needs.fetch-commits.outputs.ksu_commit }}
-      susfs_commit: ${{ needs.fetch-commits.outputs.susfs_commit }}
-      enable_susfs: ${{ inputs.enable_susfs || true }}
       build_modules: ${{ inputs.build_modules || true }}
     secrets: inherit
 
@@ -139,8 +112,6 @@ jobs:
       config_file: .github/kernel-config/a15-6.6.json
       arch: x86_64
       ksu_commit: ${{ needs.fetch-commits.outputs.ksu_commit }}
-      susfs_commit: ${{ needs.fetch-commits.outputs.susfs_commit }}
-      enable_susfs: ${{ inputs.enable_susfs || true }}
       build_modules: ${{ inputs.build_modules || true }}
     secrets: inherit
 
@@ -153,8 +124,6 @@ jobs:
       config_file: .github/kernel-config/a15-6.6.json
       arch: aarch64
       ksu_commit: ${{ needs.fetch-commits.outputs.ksu_commit }}
-      susfs_commit: ${{ needs.fetch-commits.outputs.susfs_commit }}
-      enable_susfs: ${{ inputs.enable_susfs || true }}
       build_modules: ${{ inputs.build_modules || true }}
     secrets: inherit
 
@@ -169,8 +138,6 @@ jobs:
       config_file: .github/kernel-config/a16-6.12.json
       arch: x86_64
       ksu_commit: ${{ needs.fetch-commits.outputs.ksu_commit }}
-      susfs_commit: ${{ needs.fetch-commits.outputs.susfs_commit }}
-      enable_susfs: ${{ inputs.enable_susfs || true }}
       build_modules: ${{ inputs.build_modules || true }}
     secrets: inherit
 
@@ -183,8 +150,6 @@ jobs:
       config_file: .github/kernel-config/a16-6.12.json
       arch: aarch64
       ksu_commit: ${{ needs.fetch-commits.outputs.ksu_commit }}
-      susfs_commit: ${{ needs.fetch-commits.outputs.susfs_commit }}
-      enable_susfs: ${{ inputs.enable_susfs || true }}
       build_modules: ${{ inputs.build_modules || true }}
     secrets: inherit
 
@@ -271,13 +236,10 @@ jobs:
       - name: Set Release Body
         run: |
           cat << 'EOF' > release_body.md
-          ## AVD Kernels with KernelSU-Next + SUSFS
+          ## AVD Kernels with KernelSU-Next
 
           Custom GKI kernels built for Android Virtual Device (AVD) with:
           - **KernelSU-Next** — Advanced kernel-based root solution
-          - **SUSFS** — Root hiding kernel patches (v2.0.0)
-          - **BBRv1** TCP congestion control
-          - **IPSet** support for network filtering
           - Virtual device modules included for AVD compatibility
 
           ### Architectures
@@ -291,9 +253,6 @@ jobs:
 
           ### Manager
           - KernelSU-Next: https://github.com/KernelSU-Next/KernelSU-Next
-
-          ### SUSFS Module
-          - https://github.com/sidex15/ksu_module_susfs
           EOF
 
       - name: Create Release

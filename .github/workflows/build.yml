@@ -15,13 +15,6 @@ on:
       ksu_commit:
         required: false
         type: string
-      susfs_commit:
-        required: false
-        type: string
-      enable_susfs:
-        required: false
-        type: boolean
-        default: true
       build_modules:
         required: false
         type: boolean
@@ -137,16 +130,6 @@ jobs:
         with:
           ksu_commit: ${{ inputs.ksu_commit }}
 
-      - name: Setup SUSFS
-        if: ${{ inputs.enable_susfs }}
-        uses: ./.github/actions/setup-susfs
-        with:
-          android_version: ${{ steps.parse.outputs.android_version }}
-          kernel_version: ${{ steps.parse.outputs.kernel_version }}
-          sublevel: ${{ steps.extract.outputs.sublevel }}
-          os_patch_level: ${{ steps.parse.outputs.os_patch_level }}
-          susfs_commit: ${{ inputs.susfs_commit }}
-
       - name: Configure Kernel Options
         uses: ./.github/actions/configure-kernel
         with:
@@ -243,7 +226,6 @@ jobs:
           Kernel: ${{ inputs.kernel_version }}
           Architecture: ${ARCH}
           KernelSU-Next: ${KSU_GIT_TAG:-unknown} (${KSU_COMMIT:-unknown})
-          SUSFS: ${SUSFS_VERSION:-disabled}
           Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
           EOF
 
@@ -263,4 +245,3 @@ jobs:
           echo "Architecture        : ${{ inputs.arch }}"
           echo "Patch Level         : $OS_PATCH_LEVEL"
           echo "KernelSU-Next       : ${KSU_GIT_TAG:-N/A} (${KSU_COMMIT:-N/A})"
-          echo "SUSFS               : ${SUSFS_VERSION:-disabled}"
