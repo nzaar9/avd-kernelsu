@@ -1,0 +1,10 @@
+{
+  "include": [
+    {"kernel_version": "6.12.23-android16-2025-05-exp"},
+    {"kernel_version": "6.12.23-android16-2025-06"},
+    {"kernel_version": "6.12.30-android16-2025-07"},
+    {"kernel_version": "6.12.38-android16-2025-08"},
+    {"kernel_version": "6.12.38-android16-2025-09"},
+    {"kernel_version": "6.12.58-android16-2025-12"}
+  ]
+}

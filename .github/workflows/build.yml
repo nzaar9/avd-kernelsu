@@ -1,0 +1,252 @@
+name: Build Kernel
+permissions:
+  contents: write
+  actions: write
+
+on:
+  workflow_call:
+    inputs:
+      kernel_version:
+        required: true
+        type: string
+      arch:
+        required: true
+        type: string
+      ksu_commit:
+        required: false
+        type: string
+      susfs_commit:
+        required: false
+        type: string
+      enable_susfs:
+        required: false
+        type: boolean
+        default: true
+      build_modules:
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    name: "${{ inputs.kernel_version }}-${{ inputs.arch }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Parse kernel version
+        id: parse
+        run: |
+          # Format: [KERNEL_VERSION].[SUBLEVEL]-[ANDROID_VERSION]-[PATCH_LEVEL]
+          # Example: 6.1.75-android14-2024-05
+          INPUT_VERSION="${{ inputs.kernel_version }}"
+
+          IFS='-' read -r KERNEL_PART ANDROID_PART REST <<< "$INPUT_VERSION"
+
+          KERNEL_VERSION="${KERNEL_PART%.*}"
+          SUB_LEVEL="${KERNEL_PART##*.}"
+          ANDROID_VERSION="$ANDROID_PART"
+          OS_PATCH_LEVEL="$REST"
+
+          echo "Parsed: KERNEL=$KERNEL_VERSION, SUB=$SUB_LEVEL, ANDROID=$ANDROID_VERSION, PATCH=$OS_PATCH_LEVEL"
+
+          echo "ANDROID_VERSION=$ANDROID_VERSION" >> "$GITHUB_ENV"
+          echo "KERNEL_VERSION=$KERNEL_VERSION" >> "$GITHUB_ENV"
+          echo "SUB_LEVEL=$SUB_LEVEL" >> "$GITHUB_ENV"
+          echo "OS_PATCH_LEVEL=$OS_PATCH_LEVEL" >> "$GITHUB_ENV"
+
+          echo "android_version=$ANDROID_VERSION" >> $GITHUB_OUTPUT
+          echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
+          echo "sub_level=$SUB_LEVEL" >> $GITHUB_OUTPUT
+          echo "os_patch_level=$OS_PATCH_LEVEL" >> $GITHUB_OUTPUT
+
+      - name: Free Disk Space
+        uses: endersonmenezes/free-disk-space@v3
+        with:
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_tool_cache: true
+          remove_swap: true
+          remove_packages: "azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox postgresql* temurin-* *llvm* mysql* dotnet-sdk-*"
+          remove_packages_one_command: true
+          remove_folders: "/usr/share/swift /usr/share/miniconda /usr/share/az* /usr/local/lib/node_modules /usr/local/share/chromium /usr/local/share/powershell /usr/local/julia /usr/local/aws-cli /usr/local/aws-sam-cli /usr/share/gradle"
+          rm_cmd: "rmz"
+          rmz_version: "3.1.1"
+          testing: false
+
+      - name: Setup Build Environment
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/kernel"
+          mkdir -p ~/bin
+          curl -L https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
+          chmod +x ~/bin/repo
+          echo "$HOME/bin" >> $GITHUB_PATH
+
+          # Initialize config fragment
+          touch "$GITHUB_WORKSPACE/gki.fragment"
+
+      - name: Download Kernel Repository
+        uses: ./.github/actions/download-kernel
+        with:
+          android_version: ${{ steps.parse.outputs.android_version }}
+          kernel_version: ${{ steps.parse.outputs.kernel_version }}
+          os_patch_level: ${{ steps.parse.outputs.os_patch_level }}
+
+      - name: Extract Sublevel
+        id: extract
+        run: |
+          SUBLEVEL="$SUB_LEVEL"
+          if [[ -f "$GITHUB_WORKSPACE/kernel/common/Makefile" ]]; then
+            EXTRACTED=$(grep '^SUBLEVEL = ' "$GITHUB_WORKSPACE/kernel/common/Makefile" | awk '{print $3}')
+            [[ -n "$EXTRACTED" ]] && SUBLEVEL="$EXTRACTED"
+          fi
+
+          ARCH="${{ inputs.arch }}"
+          FILE_NAME="$KERNEL_VERSION.$SUBLEVEL-$ANDROID_VERSION-$OS_PATCH_LEVEL-${ARCH}"
+          echo "SUBLEVEL=$SUBLEVEL" >> $GITHUB_ENV
+          echo "FILE_NAME=$FILE_NAME" >> $GITHUB_ENV
+          echo "file_name=$FILE_NAME" >> $GITHUB_OUTPUT
+          echo "sublevel=$SUBLEVEL" >> $GITHUB_OUTPUT
+
+      - name: Fix Less Than 6.6.50 Builds
+        if: ${{ steps.parse.outputs.android_version == 'android15' && steps.parse.outputs.kernel_version == '6.6' }}
+        working-directory: ${{ github.workspace }}/kernel/common
+        run: |
+          if ! grep -qxF '#include <trace/hooks/fs.h>' ./fs/namespace.c; then
+            sed -i '/#include <trace\/hooks\/blk.h>/a #include <trace\/hooks\/fs.h>' ./fs/namespace.c
+          fi
+
+      - name: Setup KernelSU-Next
+        uses: ./.github/actions/setup-ksu
+        with:
+          ksu_commit: ${{ inputs.ksu_commit }}
+
+      - name: Setup SUSFS
+        if: ${{ inputs.enable_susfs }}
+        uses: ./.github/actions/setup-susfs
+        with:
+          android_version: ${{ steps.parse.outputs.android_version }}
+          kernel_version: ${{ steps.parse.outputs.kernel_version }}
+          susfs_commit: ${{ inputs.susfs_commit }}
+
+      - name: Configure Kernel Options
+        uses: ./.github/actions/configure-kernel
+        with:
+          kernel_version: ${{ steps.parse.outputs.kernel_version }}
+
+      - name: Clean Kernel Flags
+        uses: ./.github/actions/clean-flags
+
+      - name: Build Kernel
+        working-directory: ${{ github.workspace }}/kernel
+        run: |
+          set -ex
+
+          ARCH="${{ inputs.arch }}"
+
+          # Copy fragment to kernel tree
+          cp "$GITHUB_WORKSPACE/gki.fragment" common/arch/arm64/configs/gki.fragment 2>/dev/null || true
+          cp "$GITHUB_WORKSPACE/gki.fragment" common/arch/x86/configs/gki.fragment 2>/dev/null || true
+
+          if [ -f "build/build.sh" ]; then
+            # Old build system
+            if [ "$ARCH" = "x86_64" ]; then
+              SKIP_MRPROPER=1 GKI_DEFCONFIG_FRAGMENT="$GITHUB_WORKSPACE/gki.fragment" \
+                LTO=thin BUILD_CONFIG=common/build.config.gki.x86_64 build/build.sh || exit 1
+            else
+              SKIP_MRPROPER=1 GKI_DEFCONFIG_FRAGMENT="$GITHUB_WORKSPACE/gki.fragment" \
+                LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh || exit 1
+            fi
+          else
+            # Bazel build system
+            if [ "$ARCH" = "x86_64" ]; then
+              DEFCONFIG_FRAG="//common:arch/x86/configs/gki.fragment"
+              KERNEL_TARGET="//common:kernel_x86_64_dist"
+              VIRT_TARGET="//common-modules/virtual-device:virtual_device_x86_64_dist"
+            else
+              DEFCONFIG_FRAG="//common:arch/arm64/configs/gki.fragment"
+              KERNEL_TARGET="//common:kernel_aarch64_dist"
+              VIRT_TARGET="//common-modules/virtual-device:virtual_device_aarch64_dist"
+            fi
+
+            # Build kernel
+            tools/bazel build \
+              --config=fast \
+              --lto=thin \
+              --defconfig_fragment=${DEFCONFIG_FRAG} \
+              ${KERNEL_TARGET} || exit 1
+
+            # Build virtual device modules for AVD
+            if [ "${{ inputs.build_modules }}" = "true" ]; then
+              tools/bazel run \
+                --config=fast \
+                --lto=thin \
+                --defconfig_fragment=${DEFCONFIG_FRAG} \
+                ${VIRT_TARGET} \
+                -- --dist_dir=dist_virt || echo "WARNING: Virtual device modules build failed"
+            fi
+          fi
+
+      - name: Prepare Artifacts
+        run: |
+          ARCH="${{ inputs.arch }}"
+          OUT_DIR="$GITHUB_WORKSPACE/output"
+          mkdir -p "$OUT_DIR"
+
+          # Copy kernel image from bazel output
+          if [ "$ARCH" = "x86_64" ]; then
+            BAZEL_OUT="$GITHUB_WORKSPACE/kernel/bazel-bin/common/kernel_x86_64"
+            cp "$BAZEL_OUT/bzImage" "$OUT_DIR/bzImage" 2>/dev/null || true
+          else
+            BAZEL_OUT="$GITHUB_WORKSPACE/kernel/bazel-bin/common/kernel_aarch64"
+            cp "$BAZEL_OUT/Image" "$OUT_DIR/Image" 2>/dev/null || true
+            cp "$BAZEL_OUT/Image.gz" "$OUT_DIR/Image.gz" 2>/dev/null || true
+          fi
+
+          # Also check old build system output
+          OLD_OUT="$GITHUB_WORKSPACE/kernel/out/$ANDROID_VERSION-$KERNEL_VERSION/dist"
+          if [ -d "$OLD_OUT" ]; then
+            cp "$OLD_OUT/bzImage" "$OUT_DIR/" 2>/dev/null || true
+            cp "$OLD_OUT/Image" "$OUT_DIR/" 2>/dev/null || true
+            cp "$OLD_OUT/Image.gz" "$OUT_DIR/" 2>/dev/null || true
+          fi
+
+          # Copy virtual device modules if built
+          VIRT_DIST="$GITHUB_WORKSPACE/kernel/dist_virt"
+          if [ -d "$VIRT_DIST" ]; then
+            mkdir -p "$OUT_DIR/modules"
+            cp "$VIRT_DIST"/*.ko "$OUT_DIR/modules/" 2>/dev/null || true
+            cp "$VIRT_DIST"/modules.* "$OUT_DIR/modules/" 2>/dev/null || true
+            cp "$VIRT_DIST"/system_dlkm* "$OUT_DIR/" 2>/dev/null || true
+          fi
+
+          # Generate build info
+          cat > "$OUT_DIR/build-info.txt" << EOF
+          Kernel: ${{ inputs.kernel_version }}
+          Architecture: ${ARCH}
+          KernelSU-Next: ${KSU_GIT_TAG:-unknown} (${KSU_COMMIT:-unknown})
+          SUSFS: ${SUSFS_VERSION:-disabled}
+          Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          EOF
+
+      - name: Upload Kernel Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.extract.outputs.file_name }}
+          path: ${{ github.workspace }}/output/**
+          if-no-files-found: warn
+          compression-level: 9
+
+      - name: Build Summary
+        if: always()
+        run: |
+          echo "Android Version     : $ANDROID_VERSION"
+          echo "Kernel Version      : $KERNEL_VERSION.$SUBLEVEL"
+          echo "Architecture        : ${{ inputs.arch }}"
+          echo "Patch Level         : $OS_PATCH_LEVEL"
+          echo "KernelSU-Next       : ${KSU_GIT_TAG:-N/A} (${KSU_COMMIT:-N/A})"
+          echo "SUSFS               : ${SUSFS_VERSION:-disabled}"

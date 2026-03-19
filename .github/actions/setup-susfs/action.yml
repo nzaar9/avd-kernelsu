@@ -1,0 +1,93 @@
+name: Setup SUSFS
+description: 'Clone and apply SUSFS patches to kernel'
+
+inputs:
+  android_version:
+    description: 'Android version (e.g., android15)'
+    required: true
+  kernel_version:
+    description: 'Kernel version (e.g., 6.6)'
+    required: true
+  susfs_commit:
+    description: 'Commit map (branch:commit,branch:commit...)'
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Clone SUSFS
+      shell: bash
+      run: |
+        SUSFS_BRANCH="gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}"
+        SUSFS_REPO="https://gitlab.com/simonpunk/susfs4ksu.git"
+
+        echo "Preparing SUSFS for branch: $SUSFS_BRANCH"
+
+        # Parse commit map to find the commit for this branch
+        COMMIT_MAP="${{ inputs.susfs_commit }}"
+        TARGET_COMMIT=""
+
+        if [ -n "$COMMIT_MAP" ]; then
+          IFS=',' read -ra ENTRIES <<< "$COMMIT_MAP"
+          for entry in "${ENTRIES[@]}"; do
+            IFS=':' read -r branch commit <<< "$entry"
+            if [ "$branch" == "$SUSFS_BRANCH" ]; then
+              TARGET_COMMIT="$commit"
+              break
+            fi
+          done
+        fi
+
+        if [ -n "$TARGET_COMMIT" ]; then
+          echo "Found specific commit for $SUSFS_BRANCH: $TARGET_COMMIT"
+          git clone "$SUSFS_REPO" -b "$SUSFS_BRANCH" susfs4ksu
+          cd susfs4ksu && git checkout "$TARGET_COMMIT" && cd ..
+        else
+          echo "Cloning latest $SUSFS_BRANCH..."
+          git clone "$SUSFS_REPO" -b "$SUSFS_BRANCH" --depth=1 susfs4ksu
+        fi
+
+        SUSFS_VERSION="2.0.0"
+        echo "SUSFS_VERSION=$SUSFS_VERSION" >> $GITHUB_ENV
+
+    - name: Enable SUSFS Kernel Config
+      shell: bash
+      run: |
+        cat >> "${{ github.workspace }}/gki.fragment" << 'EOF'
+        # SUSFS Configuration
+        CONFIG_KSU_SUSFS=y
+        CONFIG_KSU_SUSFS_SUS_PATH=y
+        CONFIG_KSU_SUSFS_SUS_MOUNT=y
+        CONFIG_KSU_SUSFS_SUS_KSTAT=y
+        CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+        CONFIG_KSU_SUSFS_ENABLE_LOG=y
+        CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+        CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+        CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+        CONFIG_KSU_SUSFS_SUS_MAP=y
+        EOF
+
+    - name: Apply SUSFS Patches
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel/common
+      run: |
+        # Copy SUSFS kernel source files
+        cp "${{ github.workspace }}/susfs4ksu/kernel_patches/fs/"* fs/
+        cp "${{ github.workspace }}/susfs4ksu/kernel_patches/include/linux/"* include/linux/
+
+        # Apply the kernel integration patch
+        PATCH_FILE="${{ github.workspace }}/susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch"
+        if [ -f "$PATCH_FILE" ]; then
+          patch -p1 < "$PATCH_FILE" || true
+        else
+          echo "WARNING: SUSFS patch not found: $PATCH_FILE"
+          echo "Available patches:"
+          ls -la "${{ github.workspace }}/susfs4ksu/kernel_patches/"
+        fi
+
+        # Apply KernelSU-Next SUSFS enablement patch
+        KSU_PATCH="${{ github.workspace }}/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"
+        if [ -f "$KSU_PATCH" ]; then
+          cd "${{ github.workspace }}/kernel/KernelSU-Next"
+          patch -p1 < "$KSU_PATCH" || true
+        fi
