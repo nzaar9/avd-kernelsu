@@ -66,18 +66,18 @@ jobs:
             git ls-remote "$1" "$2" | awk '{print $1}'
           }
 
-          # KernelSU-Next
+          # Wild KSU (KernelSU-Next with SUSFS pre-integrated)
           if [ -n "${{ inputs.ksu_commit }}" ]; then
-            resolved=$(get_commit "https://github.com/KernelSU-Next/KernelSU-Next.git" "${{ inputs.ksu_commit }}")
+            resolved=$(get_commit "https://github.com/WildKernels/Wild_KSU.git" "${{ inputs.ksu_commit }}")
             if [ -n "$resolved" ]; then
               ksu_commit="$resolved"
             else
               ksu_commit="${{ inputs.ksu_commit }}"
             fi
           else
-            ksu_commit=$(get_commit "https://github.com/KernelSU-Next/KernelSU-Next.git" "refs/heads/next")
+            ksu_commit=$(get_commit "https://github.com/WildKernels/Wild_KSU.git" "refs/heads/stable")
           fi
-          echo "KernelSU-Next: $ksu_commit"
+          echo "Wild KSU: $ksu_commit"
           echo "ksu_commit=$ksu_commit" >> $GITHUB_OUTPUT
 
           # SUSFS - fetch all relevant branches

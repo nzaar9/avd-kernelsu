@@ -132,7 +132,7 @@ jobs:
             sed -i '/#include <trace\/hooks\/blk.h>/a #include <trace\/hooks\/fs.h>' ./fs/namespace.c
           fi
 
-      - name: Setup KernelSU-Next
+      - name: Setup Wild KSU
         uses: ./.github/actions/setup-ksu
         with:
           ksu_commit: ${{ inputs.ksu_commit }}
@@ -242,7 +242,7 @@ jobs:
           cat > "$OUT_DIR/build-info.txt" << EOF
           Kernel: ${{ inputs.kernel_version }}
           Architecture: ${ARCH}
-          KernelSU-Next: ${KSU_GIT_TAG:-unknown} (${KSU_COMMIT:-unknown})
+          Wild KSU: ${KSU_GIT_TAG:-unknown} (${KSU_COMMIT:-unknown})
           SUSFS: ${SUSFS_VERSION:-disabled}
           Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
           EOF
@@ -262,5 +262,5 @@ jobs:
           echo "Kernel Version      : $KERNEL_VERSION.$SUBLEVEL"
           echo "Architecture        : ${{ inputs.arch }}"
           echo "Patch Level         : $OS_PATCH_LEVEL"
-          echo "KernelSU-Next       : ${KSU_GIT_TAG:-N/A} (${KSU_COMMIT:-N/A})"
+          echo "Wild KSU       : ${KSU_GIT_TAG:-N/A} (${KSU_COMMIT:-N/A})"
           echo "SUSFS               : ${SUSFS_VERSION:-disabled}"
