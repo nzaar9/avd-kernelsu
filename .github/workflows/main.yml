@@ -1,4 +1,4 @@
-name: Build AVD Kernels with KernelSU-Next
+name: Build AVD Kernels with KernelSU
 
 permissions:
   contents: write
@@ -7,6 +7,14 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
+      ksu_variant:
+        description: 'KernelSU variant'
+        type: choice
+        options:
+          - KernelSU
+          - KernelSU-Next
+          - SukiSU-Ultra
+        default: KernelSU-Next
       kernel_build_version:
         description: 'Kernel version to build'
         type: choice
@@ -29,7 +37,7 @@ on:
         type: boolean
         default: true
       ksu_commit:
-        description: 'KernelSU-Next commit/tag (blank = latest)'
+        description: 'KSU commit/tag override (blank = latest)'
         type: string
         default: ''
         required: false
@@ -53,26 +61,44 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       ksu_commit: ${{ steps.commits.outputs.ksu_commit }}
+      ksu_variant: ${{ steps.commits.outputs.ksu_variant }}
     steps:
       - name: Fetch Latest Commits
         id: commits
         run: |
+          VARIANT="${{ inputs.ksu_variant || 'KernelSU-Next' }}"
+          echo "ksu_variant=$VARIANT" >> $GITHUB_OUTPUT
+
           get_commit() {
             git ls-remote "$1" "$2" | awk '{print $1}'
           }
 
-          # KernelSU-Next
+          case "$VARIANT" in
+            KernelSU)
+              REPO_URL="https://github.com/tiann/KernelSU.git"
+              DEFAULT_REF="refs/heads/main"
+              ;;
+            KernelSU-Next)
+              REPO_URL="https://github.com/KernelSU-Next/KernelSU-Next.git"
+              DEFAULT_REF="refs/heads/next"
+              ;;
+            SukiSU-Ultra)
+              REPO_URL="https://github.com/SukiSU-Ultra/SukiSU-Ultra.git"
+              DEFAULT_REF="refs/heads/main"
+              ;;
+          esac
+
           if [ -n "${{ inputs.ksu_commit }}" ]; then
-            resolved=$(get_commit "https://github.com/KernelSU-Next/KernelSU-Next.git" "${{ inputs.ksu_commit }}")
+            resolved=$(get_commit "$REPO_URL" "${{ inputs.ksu_commit }}")
             if [ -n "$resolved" ]; then
               ksu_commit="$resolved"
             else
               ksu_commit="${{ inputs.ksu_commit }}"
             fi
           else
-            ksu_commit=$(get_commit "https://github.com/KernelSU-Next/KernelSU-Next.git" "refs/heads/next")
+            ksu_commit=$(get_commit "$REPO_URL" "$DEFAULT_REF")
           fi
-          echo "KernelSU-Next: $ksu_commit"
+          echo "$VARIANT: $ksu_commit"
           echo "ksu_commit=$ksu_commit" >> $GITHUB_OUTPUT
 
   # ──────────────────────────────────────────────
@@ -85,6 +111,7 @@ jobs:
     with:
       config_file: .github/kernel-config/a14-6.1.json
       arch: x86_64
+      ksu_variant: ${{ needs.fetch-commits.outputs.ksu_variant }}
       ksu_commit: ${{ needs.fetch-commits.outputs.ksu_commit }}
       build_modules: ${{ inputs.build_modules || true }}
     secrets: inherit
@@ -97,6 +124,7 @@ jobs:
     with:
       config_file: .github/kernel-config/a14-6.1.json
       arch: aarch64
+      ksu_variant: ${{ needs.fetch-commits.outputs.ksu_variant }}
       ksu_commit: ${{ needs.fetch-commits.outputs.ksu_commit }}
       build_modules: ${{ inputs.build_modules || true }}
     secrets: inherit
@@ -111,6 +139,7 @@ jobs:
     with:
       config_file: .github/kernel-config/a15-6.6.json
       arch: x86_64
+      ksu_variant: ${{ needs.fetch-commits.outputs.ksu_variant }}
       ksu_commit: ${{ needs.fetch-commits.outputs.ksu_commit }}
       build_modules: ${{ inputs.build_modules || true }}
     secrets: inherit
@@ -123,6 +152,7 @@ jobs:
     with:
       config_file: .github/kernel-config/a15-6.6.json
       arch: aarch64
+      ksu_variant: ${{ needs.fetch-commits.outputs.ksu_variant }}
       ksu_commit: ${{ needs.fetch-commits.outputs.ksu_commit }}
       build_modules: ${{ inputs.build_modules || true }}
     secrets: inherit
@@ -137,6 +167,7 @@ jobs:
     with:
       config_file: .github/kernel-config/a16-6.12.json
       arch: x86_64
+      ksu_variant: ${{ needs.fetch-commits.outputs.ksu_variant }}
       ksu_commit: ${{ needs.fetch-commits.outputs.ksu_commit }}
       build_modules: ${{ inputs.build_modules || true }}
     secrets: inherit
@@ -149,6 +180,7 @@ jobs:
     with:
       config_file: .github/kernel-config/a16-6.12.json
       arch: aarch64
+      ksu_variant: ${{ needs.fetch-commits.outputs.ksu_variant }}
       ksu_commit: ${{ needs.fetch-commits.outputs.ksu_commit }}
       build_modules: ${{ inputs.build_modules || true }}
     secrets: inherit
@@ -162,6 +194,7 @@ jobs:
     permissions:
       contents: write
     needs:
+      - fetch-commits
       - build-a14-6-1-x86_64
       - build-a14-6-1-aarch64
       - build-a15-6-6-x86_64
@@ -235,24 +268,22 @@ jobs:
 
       - name: Set Release Body
         run: |
-          cat << 'EOF' > release_body.md
-          ## AVD Kernels with KernelSU-Next
+          KSU_VARIANT="${{ needs.fetch-commits.outputs.ksu_variant }}"
+          cat << EOF > release_body.md
+          ## AVD Kernels with ${KSU_VARIANT}
 
           Custom GKI kernels built for Android Virtual Device (AVD) with:
-          - **KernelSU-Next** — Advanced kernel-based root solution
+          - **${KSU_VARIANT}** — Kernel-based root solution
           - Virtual device modules included for AVD compatibility
 
           ### Architectures
-          - `x86_64` — For standard AVD emulator on PC
-          - `aarch64` — For ARM-based AVD or physical devices
+          - \`x86_64\` — For standard AVD emulator on PC
+          - \`aarch64\` — For ARM-based AVD or physical devices
 
           ### Usage (AVD)
-          ```bash
+          \`\`\`bash
           emulator @<avd-name> -kernel <path-to-bzImage-or-Image> -no-snapshot-load -show-kernel -writable-system
-          ```
-
-          ### Manager
-          - KernelSU-Next: https://github.com/KernelSU-Next/KernelSU-Next
+          \`\`\`
           EOF
 
       - name: Create Release

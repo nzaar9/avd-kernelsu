@@ -1,19 +1,48 @@
-name: Setup KernelSU-Next
-description: 'Download and configure KernelSU-Next'
+name: Setup KernelSU
+description: 'Download and configure KernelSU, KernelSU-Next, or SukiSU-Ultra'
 
 inputs:
+  ksu_variant:
+    description: 'KernelSU variant (KernelSU / KernelSU-Next / SukiSU-Ultra)'
+    required: true
   ksu_commit:
-    description: 'KernelSU-Next commit or tag'
+    description: 'Commit or tag override'
     required: false
 
 runs:
   using: composite
   steps:
-    - name: Download KernelSU-Next
+    - name: Download KernelSU Variant
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
-        curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s ${{ inputs.ksu_commit }}
+        VARIANT="${{ inputs.ksu_variant }}"
+        COMMIT="${{ inputs.ksu_commit }}"
+
+        case "$VARIANT" in
+          KernelSU)
+            SETUP_URL="https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh"
+            KSU_DIR="KernelSU"
+            ;;
+          KernelSU-Next)
+            SETUP_URL="https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh"
+            KSU_DIR="KernelSU-Next"
+            ;;
+          SukiSU-Ultra)
+            SETUP_URL="https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh"
+            KSU_DIR="KernelSU"
+            ;;
+          *)
+            echo "ERROR: Unknown KSU variant: $VARIANT"
+            exit 1
+            ;;
+        esac
+
+        echo "Setting up $VARIANT..."
+        curl -LSs "$SETUP_URL" | bash -s $COMMIT
+
+        echo "KSU_DIR=$KSU_DIR" >> $GITHUB_ENV
+        echo "KSU_VARIANT=$VARIANT" >> $GITHUB_ENV
 
     - name: Enable KernelSU Config
       shell: bash
@@ -24,8 +53,9 @@ runs:
 
     - name: Extract KSU Version Info
       shell: bash
-      working-directory: ${{ github.workspace }}/kernel/KernelSU-Next
+      working-directory: ${{ github.workspace }}/kernel
       run: |
+        cd "$KSU_DIR"
         KSU_GIT_VERSION=$(git rev-list --count HEAD 2>/dev/null || echo "0")
         KSU_GIT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "unknown")
         KSU_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")

@@ -12,6 +12,9 @@ on:
       arch:
         required: true
         type: string
+      ksu_variant:
+        required: true
+        type: string
       ksu_commit:
         required: false
         type: string
@@ -125,9 +128,10 @@ jobs:
             sed -i '/#include <trace\/hooks\/blk.h>/a #include <trace\/hooks\/fs.h>' ./fs/namespace.c
           fi
 
-      - name: Setup KernelSU-Next
+      - name: Setup ${{ inputs.ksu_variant }}
         uses: ./.github/actions/setup-ksu
         with:
+          ksu_variant: ${{ inputs.ksu_variant }}
           ksu_commit: ${{ inputs.ksu_commit }}
 
       - name: Configure Kernel Options
@@ -225,7 +229,7 @@ jobs:
           cat > "$OUT_DIR/build-info.txt" << EOF
           Kernel: ${{ inputs.kernel_version }}
           Architecture: ${ARCH}
-          KernelSU-Next: ${KSU_GIT_TAG:-unknown} (${KSU_COMMIT:-unknown})
+          ${KSU_VARIANT:-KernelSU-Next}: ${KSU_GIT_TAG:-unknown} (${KSU_COMMIT:-unknown})
           Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
           EOF
 
@@ -244,4 +248,4 @@ jobs:
           echo "Kernel Version      : $KERNEL_VERSION.$SUBLEVEL"
           echo "Architecture        : ${{ inputs.arch }}"
           echo "Patch Level         : $OS_PATCH_LEVEL"
-          echo "KernelSU-Next       : ${KSU_GIT_TAG:-N/A} (${KSU_COMMIT:-N/A})"
+          echo "${KSU_VARIANT:-KernelSU-Next}  : ${KSU_GIT_TAG:-N/A} (${KSU_COMMIT:-N/A})"
