@@ -19,6 +19,23 @@ runs:
           rm -rf ./common/android/abi_gki_protected_exports_*
           perl -pi -e 's/^\s*"protected_exports_list"\s*:\s*"android\/abi_gki_protected_exports_aarch64",\s*$//;' ./common/BUILD.bazel 2>/dev/null || true
           perl -pi -e 's/^\s*"protected_exports_list"\s*:\s*"android\/abi_gki_protected_exports_x86_64",\s*$//;' ./common/BUILD.bazel 2>/dev/null || true
+
+          # Add extra TCP congestion control modules to module_outs so Bazel doesn't fail
+          EXTRA_MODULES=(
+            "net/ipv4/tcp_bic.ko"
+            "net/ipv4/tcp_htcp.ko"
+            "net/ipv4/tcp_westwood.ko"
+          )
+          for arch_target in "kernel_aarch64" "kernel_x86_64"; do
+            for mod in "${EXTRA_MODULES[@]}"; do
+              # Insert module into module_outs list if target exists and module not already listed
+              if grep -q "${arch_target}" ./common/BUILD.bazel 2>/dev/null; then
+                if ! grep -q "\"${mod}\"" ./common/BUILD.bazel 2>/dev/null; then
+                  sed -i "/name = \"${arch_target}\"/,/\]/{/module_outs = \[/a\\        \"${mod}\",}" ./common/BUILD.bazel 2>/dev/null || true
+                fi
+              fi
+            done
+          done
         fi
 
         cd ${{ github.workspace }}/kernel/common
