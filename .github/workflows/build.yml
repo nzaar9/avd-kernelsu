@@ -131,6 +131,8 @@ jobs:
         with:
           android_version: ${{ steps.parse.outputs.android_version }}
           kernel_version: ${{ steps.parse.outputs.kernel_version }}
+          sublevel: ${{ steps.extract.outputs.sublevel }}
+          os_patch_level: ${{ steps.parse.outputs.os_patch_level }}
           susfs_commit: ${{ inputs.susfs_commit }}
 
       - name: Configure Kernel Options
