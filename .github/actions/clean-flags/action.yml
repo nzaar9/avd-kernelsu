@@ -21,21 +21,21 @@ runs:
           perl -pi -e 's/^\s*"protected_exports_list"\s*:\s*"android\/abi_gki_protected_exports_x86_64",\s*$//;' ./common/BUILD.bazel 2>/dev/null || true
 
           # Add extra TCP congestion control modules to module_outs so Bazel doesn't fail
-          EXTRA_MODULES=(
-            "net/ipv4/tcp_bic.ko"
-            "net/ipv4/tcp_htcp.ko"
-            "net/ipv4/tcp_westwood.ko"
-          )
-          for arch_target in "kernel_aarch64" "kernel_x86_64"; do
-            for mod in "${EXTRA_MODULES[@]}"; do
-              # Insert module into module_outs list if target exists and module not already listed
-              if grep -q "${arch_target}" ./common/BUILD.bazel 2>/dev/null; then
-                if ! grep -q "\"${mod}\"" ./common/BUILD.bazel 2>/dev/null; then
-                  sed -i "/name = \"${arch_target}\"/,/\]/{/module_outs = \[/a\\        \"${mod}\",}" ./common/BUILD.bazel 2>/dev/null || true
-                fi
-              fi
-            done
-          done
+          python3 -c "
+import re, sys
+f = './common/BUILD.bazel'
+content = open(f).read()
+extras = ['\"net/ipv4/tcp_bic.ko\"', '\"net/ipv4/tcp_htcp.ko\"', '\"net/ipv4/tcp_westwood.ko\"']
+extra_lines = ',\n        '.join(extras)
+# Find each module_outs = [ and insert after the opening bracket
+def add_modules(m):
+    if any(e.strip('\"') in m.group(0) for e in extras):
+        return m.group(0)
+    return m.group(0).replace('module_outs = [', 'module_outs = [\n        ' + extra_lines + ',')
+content = re.sub(r'module_outs\s*=\s*\[', lambda m: 'module_outs = [\n        ' + extra_lines + ',', content)
+open(f, 'w').write(content)
+print('Injected extra modules into BUILD.bazel')
+          " 2>/dev/null || echo "WARNING: Failed to inject extra modules into BUILD.bazel"
         fi
 
         cd ${{ github.workspace }}/kernel/common
