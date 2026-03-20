@@ -18,8 +18,7 @@ runs:
         CONFIG_IP6_NF_TARGET_HL=y
         CONFIG_IP6_NF_MATCH_HL=y
 
-        # BBR TCP Congestion Control
-        CONFIG_TCP_CONG_ADVANCED=y
+        # BBR TCP Congestion Control (BBR only, no ADVANCED to avoid extra .ko modules)
         CONFIG_TCP_CONG_BBR=y
         CONFIG_NET_SCH_FQ=y
 
