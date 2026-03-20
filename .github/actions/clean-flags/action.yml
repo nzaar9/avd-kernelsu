@@ -21,13 +21,10 @@ runs:
           perl -pi -e 's/^\s*"protected_exports_list"\s*:\s*"android\/abi_gki_protected_exports_x86_64",\s*$//;' ./common/BUILD.bazel 2>/dev/null || true
 
           # Remove rust_binder.ko from module_outs (Android 16 lists it but it requires Rust toolchain)
-          echo "=== Searching for rust_binder in all BUILD files ==="
-          grep -rn "rust_binder" ./common/ --include="*.bazel" --include="*.bzl" --include="BUILD" || echo "No rust_binder found"
-          grep -rn "rust_binder" ./build/ --include="*.bazel" --include="*.bzl" --include="BUILD" || echo "No rust_binder in build/"
-          # Remove from any .bazel/.bzl file
           find . -type f \( -name "*.bazel" -o -name "*.bzl" -o -name "BUILD" \) -exec grep -l "rust_binder" {} \; -exec sed -i '/rust_binder/d' {} \;
-          echo "=== After removal ==="
-          grep -rn "rust_binder" . --include="*.bazel" --include="*.bzl" --include="BUILD" || echo "rust_binder successfully removed from all files"
+
+          # Disable KMI symbol list strict mode (KernelSU patches change exported symbols)
+          find . -type f \( -name "*.bazel" -o -name "*.bzl" -o -name "BUILD" \) -exec sed -i 's/kmi_symbol_list_strict_mode\s*=\s*True/kmi_symbol_list_strict_mode = False/g' {} \;
         fi
 
         cd ${{ github.workspace }}/kernel/common
