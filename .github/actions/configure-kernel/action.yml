@@ -1,5 +1,5 @@
 name: 'Configure Kernel Options'
-description: 'Set up kernel configuration fragment with networking and performance options'
+description: 'Set up kernel configuration fragment with KernelSU options'
 
 inputs:
   kernel_version:
@@ -12,33 +12,7 @@ runs:
     - name: Apply Kernel Configuration
       shell: bash
       run: |
-        cat >> "${{ github.workspace }}/gki.fragment" << 'EOF'
-        # Networking
-        CONFIG_IP_NF_TARGET_TTL=y
-        CONFIG_IP6_NF_TARGET_HL=y
-        CONFIG_IP6_NF_MATCH_HL=y
-
-        # BBR TCP Congestion Control (BBR only, no ADVANCED to avoid extra .ko modules)
-        CONFIG_TCP_CONG_BBR=y
-        CONFIG_NET_SCH_FQ=y
-
-        # IPSet Support
-        CONFIG_IP_SET=y
-        CONFIG_IP_SET_MAX=65534
-        CONFIG_IP_SET_BITMAP_IP=y
-        CONFIG_IP_SET_BITMAP_IPMAC=y
-        CONFIG_IP_SET_BITMAP_PORT=y
-        CONFIG_IP_SET_HASH_IP=y
-        CONFIG_IP_SET_HASH_IPMARK=y
-        CONFIG_IP_SET_HASH_IPPORT=y
-        CONFIG_IP_SET_HASH_IPPORTIP=y
-        CONFIG_IP_SET_HASH_IPPORTNET=y
-        CONFIG_IP_SET_HASH_IPMAC=y
-        CONFIG_IP_SET_HASH_MAC=y
-        CONFIG_IP_SET_HASH_NETPORTNET=y
-        CONFIG_IP_SET_HASH_NET=y
-        CONFIG_IP_SET_HASH_NETNET=y
-        CONFIG_IP_SET_HASH_NETPORT=y
-        CONFIG_IP_SET_HASH_NETIFACE=y
-        CONFIG_IP_SET_LIST_SET=y
-        EOF
+        # Only append configs that are known to exist in GKI Kconfig
+        # The GKI kernel already has networking defaults; avoid adding
+        # configs that may not exist and cause strict Bazel config checks to fail
+        echo "Using default GKI kernel configuration (no extra fragment overrides)"
