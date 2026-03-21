@@ -16,8 +16,9 @@ runs:
 
         # Write virtio and AVD configs to the fragment file
         # These override =m to =y in the final config
+        # Only add configs that exist in GKI Kconfig (not virtual_device-only ones)
+        # Goldfish/virtio_snd are in the virtual device module tree, NOT in GKI
         cat >> "${{ github.workspace }}/gki.fragment" << 'FRAGMENT'
-        # Virtio drivers (boot critical for AVD)
         CONFIG_VIRTIO=y
         CONFIG_VIRTIO_PCI=y
         CONFIG_VIRTIO_PCI_LEGACY=y
@@ -27,16 +28,9 @@ runs:
         CONFIG_VIRTIO_BALLOON=y
         CONFIG_VIRTIO_INPUT=y
         CONFIG_VIRTIO_MMIO=y
-        CONFIG_VIRTIO_DMA_SHARED_BUFFER=y
         CONFIG_HW_RANDOM_VIRTIO=y
         CONFIG_SCSI_VIRTIO=y
         CONFIG_DRM_VIRTIO_GPU=y
-        CONFIG_VIRTIO_SND=y
-        CONFIG_VIRTIO_VSOCKETS=y
-        # Goldfish (emulator)
-        CONFIG_GOLDFISH_PIPE=y
-        CONFIG_GOLDFISH_ADDRESS_SPACE=y
-        # Networking
         CONFIG_FAILOVER=y
         CONFIG_NET_FAILOVER=y
         FRAGMENT
@@ -64,9 +58,6 @@ runs:
           -e 's/CONFIG_HW_RANDOM_VIRTIO=m/CONFIG_HW_RANDOM_VIRTIO=y/' \
           -e 's/CONFIG_SCSI_VIRTIO=m/CONFIG_SCSI_VIRTIO=y/' \
           -e 's/CONFIG_DRM_VIRTIO_GPU=m/CONFIG_DRM_VIRTIO_GPU=y/' \
-          -e 's/CONFIG_VIRTIO_SND=m/CONFIG_VIRTIO_SND=y/' \
-          -e 's/CONFIG_GOLDFISH_PIPE=m/CONFIG_GOLDFISH_PIPE=y/' \
-          -e 's/CONFIG_GOLDFISH_ADDRESS_SPACE=m/CONFIG_GOLDFISH_ADDRESS_SPACE=y/' \
           -e 's/CONFIG_FAILOVER=m/CONFIG_FAILOVER=y/' \
           -e 's/CONFIG_NET_FAILOVER=m/CONFIG_NET_FAILOVER=y/' \
           {} \;
