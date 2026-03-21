@@ -1,5 +1,5 @@
 name: 'Configure Kernel Options'
-description: 'Set up kernel configuration fragment with KernelSU options'
+description: 'Force virtio drivers built-in for AVD compatibility'
 
 inputs:
   kernel_version:
@@ -9,10 +9,64 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Apply Kernel Configuration
+    - name: Force virtio drivers built-in for AVD
       shell: bash
+      working-directory: ${{ github.workspace }}/kernel/common
       run: |
-        # Only append configs that are known to exist in GKI Kconfig
-        # The GKI kernel already has networking defaults; avoid adding
-        # configs that may not exist and cause strict Bazel config checks to fail
-        echo "Using default GKI kernel configuration (no extra fragment overrides)"
+        echo "Forcing virtio drivers as built-in for AVD boot..."
+
+        # Force virtio modules to built-in by changing default in Kconfig
+        # This ensures virtio_blk, virtio_net etc are =y not =m
+        # so the emulator can find its block devices at first stage init
+
+        CONFIGS=(
+          CONFIG_VIRTIO
+          CONFIG_VIRTIO_PCI
+          CONFIG_VIRTIO_PCI_LEGACY
+          CONFIG_VIRTIO_MMIO
+          CONFIG_VIRTIO_BLK
+          CONFIG_VIRTIO_NET
+          CONFIG_VIRTIO_CONSOLE
+          CONFIG_VIRTIO_INPUT
+          CONFIG_VIRTIO_DMA_SHARED_BUFFER
+          CONFIG_HW_RANDOM_VIRTIO
+          CONFIG_VIRTIO_BALLOON
+          CONFIG_VIRTIO_VSOCKETS
+          CONFIG_SCSI_VIRTIO
+          CONFIG_DRM_VIRTIO_GPU
+        )
+
+        # Method: Modify the arch defconfig to force =y
+        for arch_dir in arch/x86/configs arch/arm64/configs; do
+          for defconfig in "$arch_dir"/*gki*defconfig "$arch_dir"/*ranchu*defconfig "$arch_dir"/*goldfish*defconfig; do
+            if [ -f "$defconfig" ]; then
+              echo "Patching $defconfig..."
+              for cfg in "${CONFIGS[@]}"; do
+                # Remove any existing =m entry and add =y
+                sed -i "/${cfg}=m/d" "$defconfig"
+                if ! grep -q "${cfg}=y" "$defconfig"; then
+                  echo "${cfg}=y" >> "$defconfig"
+                fi
+              done
+            fi
+          done
+        done
+
+        # Also patch Kconfig files to change tristate -> bool for critical virtio drivers
+        # This forces them built-in regardless of defconfig
+        for kconfig in drivers/block/Kconfig drivers/virtio/Kconfig; do
+          if [ -f "$kconfig" ]; then
+            # Change VIRTIO_BLK from tristate to bool
+            sed -i '/config VIRTIO_BLK/{n;s/tristate/bool/;}' "$kconfig" 2>/dev/null || true
+          fi
+        done
+
+        # Ensure virtio Kconfig entries default to y
+        for kconfig in $(find drivers/virtio drivers/block drivers/net drivers/gpu/drm/virtio -name Kconfig 2>/dev/null); do
+          # Add default y after any VIRTIO config tristate/bool line
+          sed -i '/config VIRTIO_BLK/{n;/tristate\|bool/a\        default y}' "$kconfig" 2>/dev/null || true
+          sed -i '/config VIRTIO_NET/{n;/tristate\|bool/a\        default y}' "$kconfig" 2>/dev/null || true
+          sed -i '/config VIRTIO_CONSOLE/{n;/tristate\|bool/a\        default y}' "$kconfig" 2>/dev/null || true
+        done
+
+        echo "Virtio drivers patched for built-in compilation"
