@@ -15,58 +15,36 @@ runs:
       run: |
         echo "Forcing virtio drivers as built-in for AVD boot..."
 
-        # Force virtio modules to built-in by changing default in Kconfig
-        # This ensures virtio_blk, virtio_net etc are =y not =m
-        # so the emulator can find its block devices at first stage init
+        # Instead of modifying defconfigs (which breaks Bazel savedefconfig check),
+        # change Kconfig defaults so virtio drivers are built-in by default.
+        # This way the generated defconfig naturally includes them as =y.
 
-        CONFIGS=(
-          CONFIG_VIRTIO
-          CONFIG_VIRTIO_PCI
-          CONFIG_VIRTIO_PCI_LEGACY
-          CONFIG_VIRTIO_MMIO
-          CONFIG_VIRTIO_BLK
-          CONFIG_VIRTIO_NET
-          CONFIG_VIRTIO_CONSOLE
-          CONFIG_VIRTIO_INPUT
-          CONFIG_VIRTIO_DMA_SHARED_BUFFER
-          CONFIG_HW_RANDOM_VIRTIO
-          CONFIG_VIRTIO_BALLOON
-          CONFIG_VIRTIO_VSOCKETS
-          CONFIG_SCSI_VIRTIO
-          CONFIG_DRM_VIRTIO_GPU
-        )
-
-        # Method: Modify the arch defconfig to force =y
-        for arch_dir in arch/x86/configs arch/arm64/configs; do
-          for defconfig in "$arch_dir"/*gki*defconfig "$arch_dir"/*ranchu*defconfig "$arch_dir"/*goldfish*defconfig; do
-            if [ -f "$defconfig" ]; then
-              echo "Patching $defconfig..."
-              for cfg in "${CONFIGS[@]}"; do
-                # Remove any existing =m entry and add =y
-                sed -i "/${cfg}=m/d" "$defconfig"
-                if ! grep -q "${cfg}=y" "$defconfig"; then
-                  echo "${cfg}=y" >> "$defconfig"
-                fi
-              done
-            fi
-          done
-        done
-
-        # Also patch Kconfig files to change tristate -> bool for critical virtio drivers
-        # This forces them built-in regardless of defconfig
-        for kconfig in drivers/block/Kconfig drivers/virtio/Kconfig; do
+        # Helper: change a Kconfig option from tristate to bool (forces built-in)
+        force_builtin() {
+          local kconfig="$1"
+          local config="$2"
           if [ -f "$kconfig" ]; then
-            # Change VIRTIO_BLK from tristate to bool
-            sed -i '/config VIRTIO_BLK/{n;s/tristate/bool/;}' "$kconfig" 2>/dev/null || true
+            # Change tristate to bool for this config
+            sed -i "/^config ${config}$/,/^config \|^endmenu\|^end/{s/^\(\s*\)tristate/\1bool/;}" "$kconfig" 2>/dev/null || true
           fi
-        done
+        }
 
-        # Ensure virtio Kconfig entries default to y
-        for kconfig in $(find drivers/virtio drivers/block drivers/net drivers/gpu/drm/virtio -name Kconfig 2>/dev/null); do
-          # Add default y after any VIRTIO config tristate/bool line
-          sed -i '/config VIRTIO_BLK/{n;/tristate\|bool/a\        default y}' "$kconfig" 2>/dev/null || true
-          sed -i '/config VIRTIO_NET/{n;/tristate\|bool/a\        default y}' "$kconfig" 2>/dev/null || true
-          sed -i '/config VIRTIO_CONSOLE/{n;/tristate\|bool/a\        default y}' "$kconfig" 2>/dev/null || true
-        done
+        # Force critical virtio drivers from tristate (=m possible) to bool (=y or =n only)
+        force_builtin drivers/virtio/Kconfig VIRTIO
+        force_builtin drivers/virtio/Kconfig VIRTIO_PCI
+        force_builtin drivers/virtio/Kconfig VIRTIO_PCI_LEGACY
+        force_builtin drivers/virtio/Kconfig VIRTIO_BALLOON
+        force_builtin drivers/virtio/Kconfig VIRTIO_INPUT
+        force_builtin drivers/virtio/Kconfig VIRTIO_MMIO
+        force_builtin drivers/block/Kconfig VIRTIO_BLK
+        force_builtin drivers/net/Kconfig VIRTIO_NET
+        force_builtin drivers/char/Kconfig VIRTIO_CONSOLE
+        force_builtin drivers/vhost/Kconfig VIRTIO_VSOCKETS
+        force_builtin drivers/net/virtio_net.c DUMMY_SKIP  # no-op, just in case
 
-        echo "Virtio drivers patched for built-in compilation"
+        # Also handle virtio_dma_buf which is loaded as module
+        force_builtin drivers/dma-buf/Kconfig VIRTIO_DMA_SHARED_BUFFER
+        # Try alternate location
+        force_builtin drivers/virtio/Kconfig VIRTIO_DMA_SHARED_BUFFER
+
+        echo "Virtio Kconfig entries changed from tristate to bool (forces built-in)"

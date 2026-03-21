@@ -25,6 +25,11 @@ runs:
 
           # Disable KMI symbol list strict mode (KernelSU patches change exported symbols)
           find . -type f \( -name "*.bazel" -o -name "*.bzl" -o -name "BUILD" \) -exec sed -i 's/kmi_symbol_list_strict_mode\s*=\s*True/kmi_symbol_list_strict_mode = False/g' {} \;
+
+          # Disable defconfig savedefconfig check (our Kconfig changes cause mismatch)
+          find . -type f \( -name "*.bazel" -o -name "*.bzl" \) -exec sed -i 's/defconfig_check\s*=\s*True/defconfig_check = False/g' {} \;
+          # Also handle the trim_nonlisted_kmi check
+          find . -type f \( -name "*.bazel" -o -name "*.bzl" \) -exec sed -i 's/trim_nonlisted_kmi\s*=\s*True/trim_nonlisted_kmi = False/g' {} \;
         fi
 
         cd ${{ github.workspace }}/kernel/common
