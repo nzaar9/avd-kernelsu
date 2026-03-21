@@ -1,5 +1,5 @@
 name: 'Configure Kernel Options'
-description: 'Force virtio drivers built-in for AVD compatibility'
+description: 'Force all AVD modules built-in for compatibility'
 
 inputs:
   kernel_version:
@@ -9,70 +9,109 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Force virtio drivers built-in for AVD
+    - name: Force all modules built-in for AVD
       shell: bash
       working-directory: ${{ github.workspace }}/kernel/common
       run: |
-        echo "Forcing virtio drivers as built-in for AVD boot..."
+        echo "=== Forcing ALL modules as built-in for AVD ==="
 
-        # Instead of modifying defconfigs (which breaks Bazel savedefconfig check),
-        # change Kconfig defaults so virtio drivers are built-in by default.
-        # This way the generated defconfig naturally includes them as =y.
+        # Comprehensive list of ALL modules from AVD virtual device build
+        # Changing =m to =y in ALL defconfigs ensures savedefconfig matches
+        MODULE_CONFIGS=(
+          # Virtio (boot critical)
+          CONFIG_VIRTIO
+          CONFIG_VIRTIO_PCI
+          CONFIG_VIRTIO_PCI_LEGACY
+          CONFIG_VIRTIO_PCI_MODERN_DEV
+          CONFIG_VIRTIO_PCI_LEGACY_DEV
+          CONFIG_VIRTIO_BLK
+          CONFIG_VIRTIO_NET
+          CONFIG_VIRTIO_CONSOLE
+          CONFIG_VIRTIO_BALLOON
+          CONFIG_VIRTIO_INPUT
+          CONFIG_VIRTIO_MMIO
+          CONFIG_VIRTIO_DMA_SHARED_BUFFER
+          CONFIG_VIRTIO_PMEM
+          CONFIG_VIRTIO_SND
+          CONFIG_VIRTIO_VIDEO
+          CONFIG_VIRTIO_VSOCKETS
+          CONFIG_HW_RANDOM_VIRTIO
+          CONFIG_SCSI_VIRTIO
+          CONFIG_DRM_VIRTIO_GPU
+          CONFIG_VIRTIO_RNG
+          # Goldfish (emulator hardware)
+          CONFIG_GOLDFISH
+          CONFIG_GOLDFISH_PIPE
+          CONFIG_GOLDFISH_ADDRESS_SPACE
+          CONFIG_GOLDFISH_BATTERY
+          CONFIG_GOLDFISH_SYNC
+          # WiFi/Networking
+          CONFIG_CFG80211
+          CONFIG_MAC80211
+          CONFIG_MAC80211_HWSIM
+          CONFIG_VIRT_WIFI
+          CONFIG_FAILOVER
+          CONFIG_NET_FAILOVER
+          CONFIG_ND_VIRTIO
+          # Bluetooth
+          CONFIG_BT_INTEL
+          CONFIG_BT_RTL
+          CONFIG_BT_HCIBTUSB
+          CONFIG_BT_HCIVHCI
+          # USB
+          CONFIG_USB_DUMMY_HCD
+          CONFIG_USBIP_CORE
+          CONFIG_USBIP_VHCI_HCD
+          CONFIG_USB_CONFIGFS_F_UVC
+          # GPU/Display
+          CONFIG_DRM_VKMS
+          CONFIG_CEC_PULSE8
+          # Media
+          CONFIG_VIDEO_V4L2_LOOPBACK
+          # Sound
+          CONFIG_SND_USB_AUDIO
+          # Block/Storage
+          CONFIG_DMABUF_HEAPS_SYSTEM
+          # Other
+          CONFIG_DUMMY_CPUFREQ
+          CONFIG_RTC_DRV_TEST
+          CONFIG_TEST_MEMINIT
+          # MT76 WiFi
+          CONFIG_MT76_USB
+          CONFIG_MT76x0U
+          CONFIG_MT76x2U
+          CONFIG_MT76_CORE
+          CONFIG_MT76x02_LIB
+          CONFIG_MT76x02_USB
+          CONFIG_MT76x0_COMMON
+          CONFIG_MT76x2_COMMON
+          # CAN
+          CONFIG_CAN_GS_USB
+          # VMW vsock
+          CONFIG_VMW_VSOCK_VIRTIO_TRANSPORT
+          CONFIG_VSOCKETS
+          # VHOST
+          CONFIG_VHOST_VSOCK
+        )
 
-        # Helper: change a Kconfig option from tristate to bool (forces built-in)
-        force_builtin() {
-          local kconfig="$1"
-          local config="$2"
-          if [ -f "$kconfig" ]; then
-            # Change tristate to bool for this config
-            sed -i "/^config ${config}$/,/^config \|^endmenu\|^end/{s/^\(\s*\)tristate/\1bool/;}" "$kconfig" 2>/dev/null || true
-          fi
-        }
-
-        # Force critical virtio drivers from tristate (=m possible) to bool (=y or =n only)
-        force_builtin drivers/virtio/Kconfig VIRTIO
-        force_builtin drivers/virtio/Kconfig VIRTIO_PCI
-        force_builtin drivers/virtio/Kconfig VIRTIO_PCI_LEGACY
-        force_builtin drivers/virtio/Kconfig VIRTIO_BALLOON
-        force_builtin drivers/virtio/Kconfig VIRTIO_INPUT
-        force_builtin drivers/virtio/Kconfig VIRTIO_MMIO
-        force_builtin drivers/block/Kconfig VIRTIO_BLK
-        force_builtin drivers/net/Kconfig VIRTIO_NET
-        force_builtin drivers/char/Kconfig VIRTIO_CONSOLE
-        force_builtin drivers/vhost/Kconfig VIRTIO_VSOCKETS
-        force_builtin drivers/net/virtio_net.c DUMMY_SKIP  # no-op, just in case
-
-        # Also handle virtio_dma_buf which is loaded as module
-        force_builtin drivers/dma-buf/Kconfig VIRTIO_DMA_SHARED_BUFFER
-        # Try alternate location
-        force_builtin drivers/virtio/Kconfig VIRTIO_DMA_SHARED_BUFFER
-
-        # Also update defconfig files so savedefconfig check passes
-        # Change =m to =y for virtio configs, and remove entries that become default
-        for defconfig in $(find arch/ -name "gki_defconfig" -o -name "gki.fragment" 2>/dev/null); do
-          echo "Updating $defconfig..."
-          sed -i 's/CONFIG_VIRTIO=m/CONFIG_VIRTIO=y/' "$defconfig"
-          sed -i 's/CONFIG_VIRTIO_PCI=m/CONFIG_VIRTIO_PCI=y/' "$defconfig"
-          sed -i 's/CONFIG_VIRTIO_PCI_LEGACY=m/CONFIG_VIRTIO_PCI_LEGACY=y/' "$defconfig"
-          sed -i 's/CONFIG_VIRTIO_BALLOON=m/CONFIG_VIRTIO_BALLOON=y/' "$defconfig"
-          sed -i 's/CONFIG_VIRTIO_INPUT=m/CONFIG_VIRTIO_INPUT=y/' "$defconfig"
-          sed -i 's/CONFIG_VIRTIO_MMIO=m/CONFIG_VIRTIO_MMIO=y/' "$defconfig"
-          sed -i 's/CONFIG_VIRTIO_BLK=m/CONFIG_VIRTIO_BLK=y/' "$defconfig"
-          sed -i 's/CONFIG_VIRTIO_NET=m/CONFIG_VIRTIO_NET=y/' "$defconfig"
-          sed -i 's/CONFIG_VIRTIO_CONSOLE=m/CONFIG_VIRTIO_CONSOLE=y/' "$defconfig"
-          sed -i 's/CONFIG_VIRTIO_VSOCKETS=m/CONFIG_VIRTIO_VSOCKETS=y/' "$defconfig"
-          sed -i 's/CONFIG_VIRTIO_DMA_SHARED_BUFFER=m/CONFIG_VIRTIO_DMA_SHARED_BUFFER=y/' "$defconfig"
-          sed -i 's/CONFIG_DRM_VIRTIO_GPU=m/CONFIG_DRM_VIRTIO_GPU=y/' "$defconfig"
-          sed -i 's/CONFIG_HW_RANDOM_VIRTIO=m/CONFIG_HW_RANDOM_VIRTIO=y/' "$defconfig"
-          sed -i 's/CONFIG_SCSI_VIRTIO=m/CONFIG_SCSI_VIRTIO=y/' "$defconfig"
-          sed -i 's/CONFIG_VIRTIO_PCI_MODERN_DEV=m/CONFIG_VIRTIO_PCI_MODERN_DEV=y/' "$defconfig"
-          sed -i 's/CONFIG_VIRTIO_PCI_LEGACY_DEV=m/CONFIG_VIRTIO_PCI_LEGACY_DEV=y/' "$defconfig"
-          sed -i 's/CONFIG_VIRTIO_SND=m/CONFIG_VIRTIO_SND=y/' "$defconfig"
-          sed -i 's/CONFIG_VIRTIO_PMEM=m/CONFIG_VIRTIO_PMEM=y/' "$defconfig"
-          # Also handle goldfish drivers
-          sed -i 's/CONFIG_GOLDFISH_PIPE=m/CONFIG_GOLDFISH_PIPE=y/' "$defconfig"
-          sed -i 's/CONFIG_GOLDFISH=m/CONFIG_GOLDFISH=y/' "$defconfig"
+        # Step 1: Change =m to =y in ALL defconfig files
+        echo "--- Updating defconfig files (=m -> =y) ---"
+        for defconfig in $(find arch/ -name "gki_defconfig" 2>/dev/null); do
+          echo "Patching $defconfig"
+          for cfg in "${MODULE_CONFIGS[@]}"; do
+            sed -i "s/${cfg}=m/${cfg}=y/" "$defconfig"
+          done
         done
 
-        echo "Virtio Kconfig entries changed from tristate to bool (forces built-in)"
-        echo "Defconfig files updated to match (=m -> =y)"
+        # Step 2: Change tristate to bool in Kconfig for boot-critical drivers
+        echo "--- Patching Kconfig (tristate -> bool) for boot-critical drivers ---"
+        CRITICAL_CONFIGS=(
+          VIRTIO VIRTIO_PCI VIRTIO_BLK VIRTIO_NET VIRTIO_CONSOLE
+          VIRTIO_BALLOON VIRTIO_INPUT VIRTIO_MMIO VIRTIO_PCI_LEGACY
+          VIRTIO_DMA_SHARED_BUFFER GOLDFISH_PIPE
+        )
+        for cfg in "${CRITICAL_CONFIGS[@]}"; do
+          find drivers/ -name Kconfig -exec sed -i "/^config ${cfg}$/,/^config \|^endmenu\|^end/{s/^\(\s*\)tristate/\1bool/;}" {} \; 2>/dev/null
+        done
+
+        echo "=== All modules forced built-in ==="
