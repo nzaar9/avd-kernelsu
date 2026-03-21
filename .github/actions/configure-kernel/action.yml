@@ -47,4 +47,32 @@ runs:
         # Try alternate location
         force_builtin drivers/virtio/Kconfig VIRTIO_DMA_SHARED_BUFFER
 
+        # Also update defconfig files so savedefconfig check passes
+        # Change =m to =y for virtio configs, and remove entries that become default
+        for defconfig in $(find arch/ -name "gki_defconfig" -o -name "gki.fragment" 2>/dev/null); do
+          echo "Updating $defconfig..."
+          sed -i 's/CONFIG_VIRTIO=m/CONFIG_VIRTIO=y/' "$defconfig"
+          sed -i 's/CONFIG_VIRTIO_PCI=m/CONFIG_VIRTIO_PCI=y/' "$defconfig"
+          sed -i 's/CONFIG_VIRTIO_PCI_LEGACY=m/CONFIG_VIRTIO_PCI_LEGACY=y/' "$defconfig"
+          sed -i 's/CONFIG_VIRTIO_BALLOON=m/CONFIG_VIRTIO_BALLOON=y/' "$defconfig"
+          sed -i 's/CONFIG_VIRTIO_INPUT=m/CONFIG_VIRTIO_INPUT=y/' "$defconfig"
+          sed -i 's/CONFIG_VIRTIO_MMIO=m/CONFIG_VIRTIO_MMIO=y/' "$defconfig"
+          sed -i 's/CONFIG_VIRTIO_BLK=m/CONFIG_VIRTIO_BLK=y/' "$defconfig"
+          sed -i 's/CONFIG_VIRTIO_NET=m/CONFIG_VIRTIO_NET=y/' "$defconfig"
+          sed -i 's/CONFIG_VIRTIO_CONSOLE=m/CONFIG_VIRTIO_CONSOLE=y/' "$defconfig"
+          sed -i 's/CONFIG_VIRTIO_VSOCKETS=m/CONFIG_VIRTIO_VSOCKETS=y/' "$defconfig"
+          sed -i 's/CONFIG_VIRTIO_DMA_SHARED_BUFFER=m/CONFIG_VIRTIO_DMA_SHARED_BUFFER=y/' "$defconfig"
+          sed -i 's/CONFIG_DRM_VIRTIO_GPU=m/CONFIG_DRM_VIRTIO_GPU=y/' "$defconfig"
+          sed -i 's/CONFIG_HW_RANDOM_VIRTIO=m/CONFIG_HW_RANDOM_VIRTIO=y/' "$defconfig"
+          sed -i 's/CONFIG_SCSI_VIRTIO=m/CONFIG_SCSI_VIRTIO=y/' "$defconfig"
+          sed -i 's/CONFIG_VIRTIO_PCI_MODERN_DEV=m/CONFIG_VIRTIO_PCI_MODERN_DEV=y/' "$defconfig"
+          sed -i 's/CONFIG_VIRTIO_PCI_LEGACY_DEV=m/CONFIG_VIRTIO_PCI_LEGACY_DEV=y/' "$defconfig"
+          sed -i 's/CONFIG_VIRTIO_SND=m/CONFIG_VIRTIO_SND=y/' "$defconfig"
+          sed -i 's/CONFIG_VIRTIO_PMEM=m/CONFIG_VIRTIO_PMEM=y/' "$defconfig"
+          # Also handle goldfish drivers
+          sed -i 's/CONFIG_GOLDFISH_PIPE=m/CONFIG_GOLDFISH_PIPE=y/' "$defconfig"
+          sed -i 's/CONFIG_GOLDFISH=m/CONFIG_GOLDFISH=y/' "$defconfig"
+        done
+
         echo "Virtio Kconfig entries changed from tristate to bool (forces built-in)"
+        echo "Defconfig files updated to match (=m -> =y)"
