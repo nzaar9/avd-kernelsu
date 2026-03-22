@@ -216,14 +216,32 @@ jobs:
             cp "$OLD_OUT/Image.gz" "$OUT_DIR/" 2>/dev/null || true
           fi
 
-          # Copy virtual device modules if built
+          # Copy ALL virtual device dist output (includes initramfs, modules, etc.)
           VIRT_DIST="$GITHUB_WORKSPACE/kernel/dist_virt"
           if [ -d "$VIRT_DIST" ]; then
+            echo "=== Virtual device dist contents ==="
+            ls -la "$VIRT_DIST/"
+            echo "==================================="
+
+            # Copy initramfs/ramdisk (critical for AVD boot with matching modules)
+            cp "$VIRT_DIST"/initramfs.img "$OUT_DIR/" 2>/dev/null || true
+            cp "$VIRT_DIST"/ramdisk "$OUT_DIR/" 2>/dev/null || true
+
+            # Copy modules
             mkdir -p "$OUT_DIR/modules"
             cp "$VIRT_DIST"/*.ko "$OUT_DIR/modules/" 2>/dev/null || true
             cp "$VIRT_DIST"/modules.* "$OUT_DIR/modules/" 2>/dev/null || true
+
+            # Copy system_dlkm images
             cp "$VIRT_DIST"/system_dlkm* "$OUT_DIR/" 2>/dev/null || true
           fi
+
+          # Also search for initramfs in bazel output
+          find "$GITHUB_WORKSPACE/kernel/bazel-bin" -name "initramfs.img" -exec cp {} "$OUT_DIR/" \; 2>/dev/null || true
+          find "$GITHUB_WORKSPACE/kernel/bazel-bin" -name "ramdisk" -exec cp {} "$OUT_DIR/" \; 2>/dev/null || true
+
+          echo "=== Final artifact contents ==="
+          ls -la "$OUT_DIR/"
 
           # Generate build info
           cat > "$OUT_DIR/build-info.txt" << EOF
