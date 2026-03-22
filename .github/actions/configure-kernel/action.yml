@@ -1,5 +1,5 @@
 name: 'Configure Kernel Options'
-description: 'Force all AVD modules built-in for compatibility'
+description: 'No extra config needed - modules are repacked into ramdisk'
 
 inputs:
   kernel_version:
@@ -9,62 +9,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Force all modules built-in for AVD
+    - name: Skip - modules will be repacked into ramdisk
       shell: bash
-      run: |
-        echo "=== Forcing ALL modules as built-in via gki.fragment ==="
-
-        # Write virtio and AVD configs to the fragment file
-        # These override =m to =y in the final config
-        # Only add configs that exist in GKI Kconfig (not virtual_device-only ones)
-        # Goldfish/virtio_snd are in the virtual device module tree, NOT in GKI
-        cat >> "${{ github.workspace }}/gki.fragment" << 'FRAGMENT'
-        CONFIG_VIRTIO=y
-        CONFIG_VIRTIO_PCI=y
-        CONFIG_VIRTIO_PCI_LEGACY=y
-        CONFIG_VIRTIO_BLK=y
-        CONFIG_VIRTIO_NET=y
-        CONFIG_VIRTIO_CONSOLE=y
-        CONFIG_VIRTIO_BALLOON=y
-        CONFIG_VIRTIO_INPUT=y
-        CONFIG_VIRTIO_MMIO=y
-        CONFIG_HW_RANDOM_VIRTIO=y
-        CONFIG_SCSI_VIRTIO=y
-        CONFIG_DRM_VIRTIO_GPU=y
-        CONFIG_FAILOVER=y
-        CONFIG_NET_FAILOVER=y
-        FRAGMENT
-
-        # Also patch Kconfig to change tristate->bool so Bazel config check accepts =y
-        cd "${{ github.workspace }}/kernel/common"
-
-        # Change VIRTIO_BLK and other critical drivers from tristate to bool
-        for cfg in VIRTIO_BLK VIRTIO_NET VIRTIO_CONSOLE VIRTIO_PCI VIRTIO VIRTIO_BALLOON VIRTIO_INPUT VIRTIO_MMIO; do
-          find drivers/ -name Kconfig -exec sed -i "/^config ${cfg}$/,/^config \|^endmenu\|^end/{s/^\(\s*\)tristate/\1bool/;}" {} \; 2>/dev/null
-        done
-
-        # Also update the gki_defconfig to match (=m -> =y)
-        find arch/ -name "gki_defconfig" -exec sed -i \
-          -e 's/CONFIG_VIRTIO=m/CONFIG_VIRTIO=y/' \
-          -e 's/CONFIG_VIRTIO_PCI=m/CONFIG_VIRTIO_PCI=y/' \
-          -e 's/CONFIG_VIRTIO_PCI_LEGACY=m/CONFIG_VIRTIO_PCI_LEGACY=y/' \
-          -e 's/CONFIG_VIRTIO_BLK=m/CONFIG_VIRTIO_BLK=y/' \
-          -e 's/CONFIG_VIRTIO_NET=m/CONFIG_VIRTIO_NET=y/' \
-          -e 's/CONFIG_VIRTIO_CONSOLE=m/CONFIG_VIRTIO_CONSOLE=y/' \
-          -e 's/CONFIG_VIRTIO_BALLOON=m/CONFIG_VIRTIO_BALLOON=y/' \
-          -e 's/CONFIG_VIRTIO_INPUT=m/CONFIG_VIRTIO_INPUT=y/' \
-          -e 's/CONFIG_VIRTIO_MMIO=m/CONFIG_VIRTIO_MMIO=y/' \
-          -e 's/CONFIG_VIRTIO_DMA_SHARED_BUFFER=m/CONFIG_VIRTIO_DMA_SHARED_BUFFER=y/' \
-          -e 's/CONFIG_HW_RANDOM_VIRTIO=m/CONFIG_HW_RANDOM_VIRTIO=y/' \
-          -e 's/CONFIG_SCSI_VIRTIO=m/CONFIG_SCSI_VIRTIO=y/' \
-          -e 's/CONFIG_DRM_VIRTIO_GPU=m/CONFIG_DRM_VIRTIO_GPU=y/' \
-          -e 's/CONFIG_FAILOVER=m/CONFIG_FAILOVER=y/' \
-          -e 's/CONFIG_NET_FAILOVER=m/CONFIG_NET_FAILOVER=y/' \
-          {} \;
-
-        # Debug: show what's in the fragment
-        echo "--- gki.fragment contents ---"
-        cat "${{ github.workspace }}/gki.fragment"
-        echo "--- end fragment ---"
-
-        echo "=== Done ==="
+      run: echo "Using default GKI config. Matching modules will be repacked into ramdisk."
