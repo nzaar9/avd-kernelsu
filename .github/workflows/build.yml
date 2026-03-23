@@ -154,13 +154,28 @@ jobs:
           cp "$GITHUB_WORKSPACE/gki.fragment" common/arch/x86/configs/gki.fragment 2>/dev/null || true
 
           if [ -f "build/build.sh" ]; then
-            # Old build system
+            # Old build system (produces matching kernel + modules)
+            echo "=== Using build.sh (old build system) ==="
+
+            # Step 1: Build GKI kernel
             if [ "$ARCH" = "x86_64" ]; then
-              SKIP_MRPROPER=1 GKI_DEFCONFIG_FRAGMENT="$GITHUB_WORKSPACE/gki.fragment" \
-                LTO=thin BUILD_CONFIG=common/build.config.gki.x86_64 build/build.sh || exit 1
+              GKI_CONFIG="common/build.config.gki.x86_64"
+              VIRT_CONFIG="common-modules/virtual-device/build.config.virtual_device.x86_64"
             else
-              SKIP_MRPROPER=1 GKI_DEFCONFIG_FRAGMENT="$GITHUB_WORKSPACE/gki.fragment" \
-                LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh || exit 1
+              GKI_CONFIG="common/build.config.gki.aarch64"
+              VIRT_CONFIG="common-modules/virtual-device/build.config.virtual_device.aarch64"
+            fi
+
+            SKIP_MRPROPER=1 LTO=thin BUILD_CONFIG="$GKI_CONFIG" build/build.sh || exit 1
+
+            # Step 2: Build virtual device modules (uses same kernel, produces matching .ko files)
+            SKIP_MRPROPER=1 LTO=thin BUILD_CONFIG="$VIRT_CONFIG" build/build.sh || echo "WARNING: Virtual device modules build failed"
+
+            # Find the actual dist output directory
+            DIST_OUT=$(find "$GITHUB_WORKSPACE/kernel/out" -name "dist" -type d | head -1)
+            echo "Build output at: $DIST_OUT"
+            if [ -n "$DIST_OUT" ]; then
+              ls -la "$DIST_OUT/" | head -20
             fi
           else
             # Bazel build system
@@ -196,74 +211,73 @@ jobs:
         run: |
           ARCH="${{ inputs.arch }}"
           OUT_DIR="$GITHUB_WORKSPACE/output"
-          mkdir -p "$OUT_DIR"
+          mkdir -p "$OUT_DIR" "$OUT_DIR/modules"
 
-          # Copy kernel image from bazel output
-          if [ "$ARCH" = "x86_64" ]; then
-            BAZEL_OUT="$GITHUB_WORKSPACE/kernel/bazel-bin/common/kernel_x86_64"
-            cp "$BAZEL_OUT/bzImage" "$OUT_DIR/bzImage" 2>/dev/null || true
-          else
-            BAZEL_OUT="$GITHUB_WORKSPACE/kernel/bazel-bin/common/kernel_aarch64"
-            cp "$BAZEL_OUT/Image" "$OUT_DIR/Image" 2>/dev/null || true
-            cp "$BAZEL_OUT/Image.gz" "$OUT_DIR/Image.gz" 2>/dev/null || true
+          # Find dist output from any build system
+          # build.sh outputs to: out/<target>/dist/
+          # Bazel outputs to: bazel-bin/common/kernel_<arch>/
+          echo "=== Searching for build output ==="
+
+          # 1. Check build.sh output (all dist directories)
+          for DIST in $(find "$GITHUB_WORKSPACE/kernel/out" -name "dist" -type d 2>/dev/null); do
+            echo "Found dist: $DIST"
+            ls "$DIST/" 2>/dev/null | head -10
+            # Copy kernel
+            cp "$DIST/bzImage" "$OUT_DIR/" 2>/dev/null || true
+            cp "$DIST/Image" "$OUT_DIR/" 2>/dev/null || true
+            cp "$DIST/Image.gz" "$OUT_DIR/" 2>/dev/null || true
+            # Copy modules
+            cp "$DIST"/*.ko "$OUT_DIR/modules/" 2>/dev/null || true
+            cp "$DIST"/modules.* "$OUT_DIR/modules/" 2>/dev/null || true
+            # Copy system_dlkm
+            cp "$DIST"/system_dlkm* "$OUT_DIR/" 2>/dev/null || true
+            # Copy initramfs if present
+            cp "$DIST"/initramfs.img "$OUT_DIR/" 2>/dev/null || true
+          done
+
+          # 2. Check Bazel output (fallback)
+          if [ ! -f "$OUT_DIR/bzImage" ] && [ ! -f "$OUT_DIR/Image" ]; then
+            echo "No build.sh output found, checking Bazel..."
+            if [ "$ARCH" = "x86_64" ]; then
+              BAZEL_OUT="$GITHUB_WORKSPACE/kernel/bazel-bin/common/kernel_x86_64"
+              cp "$BAZEL_OUT/bzImage" "$OUT_DIR/" 2>/dev/null || true
+            else
+              BAZEL_OUT="$GITHUB_WORKSPACE/kernel/bazel-bin/common/kernel_aarch64"
+              cp "$BAZEL_OUT/Image" "$OUT_DIR/" 2>/dev/null || true
+            fi
+            # Bazel virtual device dist
+            VIRT_DIST="$GITHUB_WORKSPACE/kernel/dist_virt"
+            if [ -d "$VIRT_DIST" ]; then
+              cp "$VIRT_DIST"/*.ko "$OUT_DIR/modules/" 2>/dev/null || true
+              cp "$VIRT_DIST"/modules.* "$OUT_DIR/modules/" 2>/dev/null || true
+              cp "$VIRT_DIST"/system_dlkm* "$OUT_DIR/" 2>/dev/null || true
+            fi
           fi
 
-          # Also check old build system output
-          OLD_OUT="$GITHUB_WORKSPACE/kernel/out/$ANDROID_VERSION-$KERNEL_VERSION/dist"
-          if [ -d "$OLD_OUT" ]; then
-            cp "$OLD_OUT/bzImage" "$OUT_DIR/" 2>/dev/null || true
-            cp "$OLD_OUT/Image" "$OUT_DIR/" 2>/dev/null || true
-            cp "$OLD_OUT/Image.gz" "$OUT_DIR/" 2>/dev/null || true
-          fi
-
-          # Copy virtual device modules
-          VIRT_DIST="$GITHUB_WORKSPACE/kernel/dist_virt"
-          if [ -d "$VIRT_DIST" ]; then
-            mkdir -p "$OUT_DIR/modules"
-            cp "$VIRT_DIST"/*.ko "$OUT_DIR/modules/" 2>/dev/null || true
-            cp "$VIRT_DIST"/modules.* "$OUT_DIR/modules/" 2>/dev/null || true
-            cp "$VIRT_DIST"/system_dlkm* "$OUT_DIR/" 2>/dev/null || true
-          fi
-
-          # Create a repacked initramfs with matching modules
-          # Download the stock AVD ramdisk and inject our modules
-          echo "=== Repacking ramdisk with matching modules ==="
-          STOCK_RAMDISK=""
-          # Try to find a stock ramdisk from the kernel source
-          find "$GITHUB_WORKSPACE/kernel" -path "*/virtual-device/ramdisk" -o -name "initramfs.img" 2>/dev/null | head -5
-
-          # Search in bazel output for the virtual device initramfs
-          VIRT_INITRAMFS=$(find "$GITHUB_WORKSPACE/kernel/bazel-bin" -name "initramfs.img" 2>/dev/null | head -1)
-          if [ -n "$VIRT_INITRAMFS" ]; then
-            echo "Found initramfs at: $VIRT_INITRAMFS"
-            cp "$VIRT_INITRAMFS" "$OUT_DIR/initramfs.img"
-          fi
-
-          # If we have matching modules, create a standalone initramfs with them
-          if [ -d "$OUT_DIR/modules" ] && ls "$OUT_DIR/modules"/*.ko >/dev/null 2>&1; then
-            echo "Creating initramfs with matching modules..."
+          # 3. Create initramfs with matching modules for AVD use
+          MODULE_COUNT=$(ls "$OUT_DIR/modules"/*.ko 2>/dev/null | wc -l)
+          if [ "$MODULE_COUNT" -gt 0 ]; then
+            echo "=== Creating initramfs with $MODULE_COUNT matching modules ==="
             TMPRD=$(mktemp -d)
             mkdir -p "$TMPRD/lib/modules"
-
-            # Copy all .ko files
             cp "$OUT_DIR/modules"/*.ko "$TMPRD/lib/modules/"
-
-            # Create modules.load with the load order
             if [ -f "$OUT_DIR/modules/modules.load" ]; then
               cp "$OUT_DIR/modules/modules.load" "$TMPRD/lib/modules/"
             else
-              # Generate basic load order
               ls "$TMPRD/lib/modules"/*.ko | xargs -n1 basename > "$TMPRD/lib/modules/modules.load"
             fi
-
-            # Pack as cpio+gzip
             (cd "$TMPRD" && find . | cpio -o -H newc 2>/dev/null | gzip > "$OUT_DIR/modules-initramfs.gz")
             rm -rf "$TMPRD"
-            echo "Created modules-initramfs.gz"
           fi
+
+          # Remove empty modules dir if no modules found
+          rmdir "$OUT_DIR/modules" 2>/dev/null || true
 
           echo "=== Final artifact contents ==="
           ls -la "$OUT_DIR/"
+          echo "=== Modules ==="
+          ls "$OUT_DIR/modules/" 2>/dev/null | wc -l
+          echo "modules found"
 
           # Generate build info
           cat > "$OUT_DIR/build-info.txt" << EOF
