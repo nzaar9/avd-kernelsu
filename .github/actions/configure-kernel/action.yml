@@ -1,5 +1,5 @@
 name: 'Configure Kernel Options'
-description: 'Force virtio and emulator drivers as built-in for AVD compatibility'
+description: 'Force virtio drivers as built-in for AVD compatibility'
 
 inputs:
   kernel_version:
@@ -13,47 +13,52 @@ runs:
       shell: bash
       run: |
         FRAG="${{ github.workspace }}/gki.fragment"
-        cat > "$FRAG" << 'FRAGEOF'
-        # Force virtio drivers as built-in (=y) for AVD emulator
-        # Without these built-in, the emulator can't load modules (vermagic mismatch)
-        CONFIG_VIRTIO=y
-        CONFIG_VIRTIO_PCI=y
-        CONFIG_VIRTIO_PCI_LEGACY=y
-        CONFIG_VIRTIO_MMIO=y
-        CONFIG_VIRTIO_BLK=y
-        CONFIG_VIRTIO_NET=y
-        CONFIG_VIRTIO_CONSOLE=y
-        CONFIG_VIRTIO_INPUT=y
-        CONFIG_VIRTIO_BALLOON=y
-        CONFIG_VIRTIO_MEM=y
-        CONFIG_DRM_VIRTIO_GPU=y
-        CONFIG_HW_RANDOM_VIRTIO=y
-        CONFIG_VIRTIO_DMA_SHARED_BUFFER=y
-        CONFIG_SND_VIRTIO=y
-        CONFIG_VIRTIO_VSOCKETS=y
-        CONFIG_VIRTIO_VSOCKETS_COMMON=y
 
-        # Goldfish emulator hardware
-        CONFIG_GOLDFISH=y
-        CONFIG_GOLDFISH_PIPE=y
-        CONFIG_GOLDFISH_ADDRESS_SPACE=y
+        # Only add configs that exist in Kconfig - check before adding
+        KERNEL_SRC="${{ github.workspace }}/kernel/common"
+        echo "# AVD virtio built-in configs" > "$FRAG"
 
-        # Other AVD essentials
-        CONFIG_DM_VERITY=y
-        CONFIG_EROFS_FS=y
-        FRAGEOF
+        # Check each config exists in Kconfig before adding to fragment
+        for cfg in \
+          CONFIG_VIRTIO \
+          CONFIG_VIRTIO_PCI \
+          CONFIG_VIRTIO_PCI_LEGACY \
+          CONFIG_VIRTIO_MMIO \
+          CONFIG_VIRTIO_BLK \
+          CONFIG_VIRTIO_NET \
+          CONFIG_VIRTIO_CONSOLE \
+          CONFIG_VIRTIO_INPUT \
+          CONFIG_VIRTIO_BALLOON \
+          CONFIG_VIRTIO_MEM \
+          CONFIG_DRM_VIRTIO_GPU \
+          CONFIG_HW_RANDOM_VIRTIO \
+          CONFIG_VIRTIO_DMA_SHARED_BUFFER \
+          CONFIG_SND_VIRTIO \
+          CONFIG_VIRTIO_VSOCKETS \
+          CONFIG_VIRTIO_VSOCKETS_COMMON \
+          CONFIG_GOLDFISH \
+          CONFIG_GOLDFISH_PIPE \
+          CONFIG_GOLDFISH_ADDRESS_SPACE \
+          CONFIG_DM_VERITY \
+          CONFIG_EROFS_FS \
+        ; do
+          # Strip CONFIG_ prefix to get Kconfig symbol name
+          SYM="${cfg#CONFIG_}"
+          if grep -rq "^config $SYM$" "$KERNEL_SRC" 2>/dev/null; then
+            echo "${cfg}=y" >> "$FRAG"
+            echo "  Added: ${cfg}=y"
+          else
+            echo "  Skipped (not in Kconfig): ${cfg}"
+          fi
+        done
 
-        # Remove leading whitespace from heredoc
-        sed -i 's/^        //' "$FRAG"
-        echo "=== GKI Fragment ==="
+        echo "=== Final GKI Fragment ==="
         cat "$FRAG"
-        echo "===================="
+        echo "=========================="
 
-        # Also copy to the kernel source arch config dirs
-        for dir in "${{ github.workspace }}/kernel/common/arch/x86/configs" \
-                   "${{ github.workspace }}/kernel/common/arch/arm64/configs"; do
+        # Copy to kernel arch config dirs
+        for dir in "$KERNEL_SRC/arch/x86/configs" "$KERNEL_SRC/arch/arm64/configs"; do
           if [ -d "$dir" ]; then
             cp "$FRAG" "$dir/gki.fragment"
-            echo "Copied fragment to $dir/gki.fragment"
           fi
         done
