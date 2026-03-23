@@ -1,5 +1,5 @@
 name: 'Configure Kernel Options'
-description: 'No extra config needed - modules are repacked into ramdisk'
+description: 'Force virtio and emulator drivers as built-in for AVD compatibility'
 
 inputs:
   kernel_version:
@@ -9,6 +9,51 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Skip - modules will be repacked into ramdisk
+    - name: Create GKI fragment with built-in virtio drivers
       shell: bash
-      run: echo "Using default GKI config. Matching modules will be repacked into ramdisk."
+      run: |
+        FRAG="${{ github.workspace }}/gki.fragment"
+        cat > "$FRAG" << 'FRAGEOF'
+        # Force virtio drivers as built-in (=y) for AVD emulator
+        # Without these built-in, the emulator can't load modules (vermagic mismatch)
+        CONFIG_VIRTIO=y
+        CONFIG_VIRTIO_PCI=y
+        CONFIG_VIRTIO_PCI_LEGACY=y
+        CONFIG_VIRTIO_MMIO=y
+        CONFIG_VIRTIO_BLK=y
+        CONFIG_VIRTIO_NET=y
+        CONFIG_VIRTIO_CONSOLE=y
+        CONFIG_VIRTIO_INPUT=y
+        CONFIG_VIRTIO_BALLOON=y
+        CONFIG_VIRTIO_MEM=y
+        CONFIG_DRM_VIRTIO_GPU=y
+        CONFIG_HW_RANDOM_VIRTIO=y
+        CONFIG_VIRTIO_DMA_SHARED_BUFFER=y
+        CONFIG_SND_VIRTIO=y
+        CONFIG_VIRTIO_VSOCKETS=y
+        CONFIG_VIRTIO_VSOCKETS_COMMON=y
+
+        # Goldfish emulator hardware
+        CONFIG_GOLDFISH=y
+        CONFIG_GOLDFISH_PIPE=y
+        CONFIG_GOLDFISH_ADDRESS_SPACE=y
+
+        # Other AVD essentials
+        CONFIG_DM_VERITY=y
+        CONFIG_EROFS_FS=y
+        FRAGEOF
+
+        # Remove leading whitespace from heredoc
+        sed -i 's/^        //' "$FRAG"
+        echo "=== GKI Fragment ==="
+        cat "$FRAG"
+        echo "===================="
+
+        # Also copy to the kernel source arch config dirs
+        for dir in "${{ github.workspace }}/kernel/common/arch/x86/configs" \
+                   "${{ github.workspace }}/kernel/common/arch/arm64/configs"; do
+          if [ -d "$dir" ]; then
+            cp "$FRAG" "$dir/gki.fragment"
+            echo "Copied fragment to $dir/gki.fragment"
+          fi
+        done

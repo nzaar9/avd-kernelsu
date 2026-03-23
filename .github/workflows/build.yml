@@ -166,10 +166,23 @@ jobs:
               VIRT_CONFIG="common-modules/virtual-device/build.config.virtual_device.aarch64"
             fi
 
-            SKIP_MRPROPER=1 LTO=thin BUILD_CONFIG="$GKI_CONFIG" build/build.sh || exit 1
+            SKIP_MRPROPER=1 LTO=thin \
+              GKI_DEFCONFIG_FRAGMENT="$GITHUB_WORKSPACE/gki.fragment" \
+              BUILD_CONFIG="$GKI_CONFIG" build/build.sh || exit 1
+
+            # Verify virtio is built-in
+            if [ -f "$GITHUB_WORKSPACE/kernel/out/*/common/.config" ] || true; then
+              CONFIG_FILE=$(find "$GITHUB_WORKSPACE/kernel/out" -name ".config" -path "*/common/.config" | head -1)
+              if [ -n "$CONFIG_FILE" ]; then
+                echo "=== Checking virtio config ==="
+                grep -E "VIRTIO_BLK|VIRTIO_PCI|VIRTIO_NET" "$CONFIG_FILE" | head -10
+              fi
+            fi
 
             # Step 2: Build virtual device modules (uses same kernel, produces matching .ko files)
-            SKIP_MRPROPER=1 LTO=thin BUILD_CONFIG="$VIRT_CONFIG" build/build.sh || echo "WARNING: Virtual device modules build failed"
+            SKIP_MRPROPER=1 LTO=thin \
+              GKI_DEFCONFIG_FRAGMENT="$GITHUB_WORKSPACE/gki.fragment" \
+              BUILD_CONFIG="$VIRT_CONFIG" build/build.sh || echo "WARNING: Virtual device modules build failed"
 
             # Find the actual dist output directory
             DIST_OUT=$(find "$GITHUB_WORKSPACE/kernel/out" -name "dist" -type d | head -1)
